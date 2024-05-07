@@ -19,6 +19,20 @@ type VarDecl struct {
 	Var
 }
 
+var _Registers = [...]string{
+	"$zero",
+	"$at",
+	"$v0", "$v1",
+	"$a0", "$a1", "$a2", "$a3",
+	"$t0", "$t1", "$t2", "$t3", "$t4", "$t5", "$t6", "$t7",
+	"$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7",
+	"$t8", "$t9",
+	"$k0", "$k1",
+	"$gp",
+	"$sp",
+	"$fp",
+	"$ra"}
+
 // String returns the string representation of the variable declaration.
 func (v *VarDecl) String() string {
 	return v.Name
@@ -30,10 +44,14 @@ func (v *VarDecl) Def() string {
 	buf := &strings.Builder{}
 	switch v.Class {
 	case Register:
-		fmt.Fprintf(buf, "// register: %d\n", v.Addr)
+		fmt.Fprintf(buf, "// register: %s\n", _Registers[v.Addr])
 	default:
 		if v.Addr > 0 {
-			fmt.Fprintf(buf, "// address: 0x%08X\n", v.Addr)
+			if v.Addr > 0x80000000 && v.Addr < 0x90000000 {
+				fmt.Fprintf(buf, "// address: 0x%08X\n", v.Addr)
+			} else {
+				fmt.Fprintf(buf, "// address: %d\n", int32(v.Addr))
+			}
 		}
 	}
 	if v.Size > 0 {
@@ -89,6 +107,7 @@ func (f *FuncDecl) String() string {
 func (f *FuncDecl) Def() string {
 	// TODO: Print storage class.
 	buf := &strings.Builder{}
+	fmt.Fprintf(buf, "// path: %s\n", f.Path)
 	if f.Addr > 0 {
 		fmt.Fprintf(buf, "// address: 0x%08X\n", f.Addr)
 	}
@@ -101,19 +120,31 @@ func (f *FuncDecl) Def() string {
 		fmt.Fprintf(buf, "%s;", f.Var)
 		return buf.String()
 	}
-	fmt.Fprintf(buf, "%s ", f.Var)
+	fmt.Fprintf(buf, "%s\n", f.Var)
 	for i, block := range f.Blocks {
-		indent := strings.Repeat("\t", i)
-		fmt.Fprintf(buf, "%s{\n", indent)
+		indent := strings.Repeat("\t", block.Depth)
+		fmt.Fprintf(buf, "%s{ //line: %d\n", indent, block.LineStart)
 		for _, local := range block.Locals {
-			indent := strings.Repeat("\t", i+1)
+			indent := strings.Repeat("\t", block.Depth+1)
 			l := strings.Replace(local.Def(), "\n", "\n"+indent, -1)
 			fmt.Fprintf(buf, "%s%s;\n", indent, l)
 		}
+		if i < len(f.Blocks)-1 {
+			for j := i; j >= 0; j-- {
+				if f.Blocks[i+1].Depth <= f.Blocks[j].Depth && !f.Blocks[j].Closed {
+					f.Blocks[j].Closed = true
+					indent := strings.Repeat("\t", f.Blocks[j].Depth)
+					fmt.Fprintf(buf, "%s} //line: %d\n", indent, f.Blocks[j].LineEnd)
+				}
+			}
+		}
 	}
 	for i := len(f.Blocks) - 1; i >= 0; i-- {
-		indent := strings.Repeat("\t", i)
-		fmt.Fprintf(buf, "%s}\n", indent)
+		if !f.Blocks[i].Closed {
+			f.Blocks[i].Closed = true
+			indent := strings.Repeat("\t", f.Blocks[i].Depth)
+			fmt.Fprintf(buf, "%s} //line: %d\n", indent, f.Blocks[i].LineEnd)
+		}
 	}
 	return buf.String()
 }
@@ -126,4 +157,6 @@ type Block struct {
 	LineEnd uint32
 	// Local variables.
 	Locals []*VarDecl
+	Closed bool
+	Depth  int
 }

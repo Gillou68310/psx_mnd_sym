@@ -33,6 +33,7 @@ const (
 	UShort                     // unsigned short
 	UInt                       // unsigned int
 	ULong                      // unsigned long
+	Float                      // float
 )
 
 // Def returns the C syntax representation of the definition of the type.

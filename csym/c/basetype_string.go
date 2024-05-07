@@ -4,9 +4,9 @@ package c
 
 import "strconv"
 
-const _BaseType_name = "voidcharshortintlongunsigned charunsigned shortunsigned intunsigned long"
+const _BaseType_name = "voidcharshortintlongunsigned charunsigned shortunsigned intunsigned longfloat"
 
-var _BaseType_index = [...]uint8{0, 4, 8, 13, 16, 20, 33, 47, 59, 72}
+var _BaseType_index = [...]uint8{0, 4, 8, 13, 16, 20, 33, 47, 59, 72, 77}
 
 func (i BaseType) String() string {
 	i -= 1

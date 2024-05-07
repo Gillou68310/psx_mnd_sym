@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/mefistotelis/psx_mnd_sym"
+	sym "github.com/mefistotelis/psx_mnd_sym"
 	"github.com/mefistotelis/psx_mnd_sym/csym/c"
 )
 
 // ParseDecls parses the symbols into the equivalent C declarations.
 func (p *Parser) ParseDecls(syms []*sym.Symbol) {
-	if p.opts.Verbose { fmt.Printf("Parsing %d symbol tags for declarations...\n", len(syms)) }
+	if p.opts.Verbose {
+		fmt.Printf("Parsing %d symbol tags for declarations...\n", len(syms))
+	}
 	for i := 0; i < len(syms); i++ {
 		s := syms[i]
 		switch body := s.Body.(type) {
@@ -60,7 +62,9 @@ func (p *Parser) ParseDecls(syms []*sym.Symbol) {
 			panic(fmt.Sprintf("support for symbol type %T not yet implemented", body))
 		}
 	}
-	if p.opts.Verbose { fmt.Printf("Created %d functions, %d global variables\n", len(p.curOverlay.Funcs), len(p.curOverlay.Vars)) }
+	if p.opts.Verbose {
+		fmt.Printf("Created %d functions, %d global variables\n", len(p.curOverlay.Funcs), len(p.curOverlay.Vars))
+	}
 }
 
 // parseSymbol parses a symbol and its associated address.
@@ -179,6 +183,7 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 	p.curOverlay.Lines = append(p.curOverlay.Lines, line)
 	var blocks blockStack
 	var curBlock *c.Block
+	var depth = 0
 	for n = 0; n < len(syms); n++ {
 		s := syms[n]
 		switch body := s.Body.(type) {
@@ -191,6 +196,8 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 			}
 			block := &c.Block{
 				LineStart: body.Line,
+				Closed:    false,
+				Depth:     depth,
 			}
 			f.Blocks = append(f.Blocks, block)
 			curBlock = block
@@ -201,6 +208,7 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 				Line: curLine.Line,
 			}
 			p.curOverlay.Lines = append(p.curOverlay.Lines, line)
+			depth++
 		case *sym.BlockEnd:
 			curBlock.LineEnd = body.Line
 			if !blocks.empty() {
@@ -215,6 +223,7 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 				Line: curLine.Line,
 			}
 			p.curOverlay.Lines = append(p.curOverlay.Lines, line)
+			depth--
 		case *sym.Def:
 			t := p.parseType(body.Type, nil, "")
 			v := p.parseLocalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
@@ -314,8 +323,12 @@ func findFunc(p *Parser, name string, addr uint32) (*c.FuncDecl, *c.FuncType) {
 		nameExists = len(funcs) > 0
 		for i := 0; i < len(funcs); i++ {
 			tf := funcs[i]
-			if tf.Addr != addr { continue }
-			if f != nil { continue }
+			if tf.Addr != addr {
+				continue
+			}
+			if f != nil {
+				continue
+			}
 			f = tf
 		}
 	}

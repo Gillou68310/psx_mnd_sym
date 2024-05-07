@@ -5,14 +5,16 @@ import (
 	"log"
 	"strings"
 
-	"github.com/mefistotelis/psx_mnd_sym"
+	sym "github.com/mefistotelis/psx_mnd_sym"
 	"github.com/mefistotelis/psx_mnd_sym/csym/c"
 )
 
 // ParseTypes parses the SYM types into the equivalent C types.
 func (p *Parser) ParseTypes(syms []*sym.Symbol) {
 	p.initTaggedTypes(syms)
-	if p.opts.Verbose { fmt.Printf("Parsing %d symbol tags for types...\n", len(syms)) }
+	if p.opts.Verbose {
+		fmt.Printf("Parsing %d symbol tags for types...\n", len(syms))
+	}
 	// Parse symbols.
 	for i := 0; i < len(syms); i++ {
 		s := syms[i]
@@ -38,8 +40,8 @@ func (p *Parser) ParseTypes(syms []*sym.Symbol) {
 				// TODO: Replace with parseDef?
 				p.parseTypedef(body.Type, body.Dims, body.Tag, body.Name)
 			}
-		// We are not using 'default:', here nor in body.Class switches; that is because
-		// such verification is made when parsing declarations (`parse_decls.go`)
+			// We are not using 'default:', here nor in body.Class switches; that is because
+			// such verification is made when parsing declarations (`parse_decls.go`)
 		}
 	}
 	if p.opts.Verbose {
@@ -50,7 +52,9 @@ func (p *Parser) ParseTypes(syms []*sym.Symbol) {
 
 // initTaggedTypes adds scaffolding types for structs, unions and enums.
 func (p *Parser) initTaggedTypes(syms []*sym.Symbol) {
-	if p.opts.Verbose { fmt.Printf("Initializing tagged types...\n") }
+	if p.opts.Verbose {
+		fmt.Printf("Initializing tagged types...\n")
+	}
 	// Bool used for NULL type.
 	boolDef := &c.VarDecl{
 		Class: c.Typedef,
@@ -312,7 +316,7 @@ func (p *Parser) RmNilStructs() {
 
 func (p *Parser) emptyStruct(tag string, size uint32) *c.StructType {
 	t := &c.StructType{
-		Tag: tag,
+		Tag:  tag,
 		Size: size,
 	}
 	return p.AddStruct(t)
@@ -327,7 +331,9 @@ func (p *Parser) findStruct(tag string, size uint32, matchSize bool) *c.StructTy
 		nameExists = len(structs) > 0
 		for i := 0; i < len(structs); i++ {
 			tt := structs[i]
-			if matchSize && tt.Size != size { continue }
+			if matchSize && tt.Size != size {
+				continue
+			}
 			t = tt
 		}
 	}
@@ -350,8 +356,12 @@ func findEmptyStruct(p *Parser, tag string, size uint32) *c.StructType {
 	if ok {
 		for i := 0; i < len(structs); i++ {
 			tt := structs[i]
-			if tt.Size != size { continue }
-			if len(tt.Fields) != 0 { continue }
+			if tt.Size != size {
+				continue
+			}
+			if len(tt.Fields) != 0 {
+				continue
+			}
 			t = tt
 		}
 	}
@@ -429,7 +439,9 @@ func (p *Parser) findUnion(tag string, size uint32, matchSize bool) *c.UnionType
 		nameExists = len(unions) > 0
 		for i := 0; i < len(unions); i++ {
 			tt := unions[i]
-			if matchSize && tt.Size != size { continue }
+			if matchSize && tt.Size != size {
+				continue
+			}
 			t = tt
 		}
 	}
@@ -452,8 +464,12 @@ func findEmptyUnion(p *Parser, tag string, size uint32) *c.UnionType {
 	if ok {
 		for i := 0; i < len(unions); i++ {
 			tt := unions[i]
-			if tt.Size != size { continue }
-			if len(tt.Fields) != 0 { continue }
+			if tt.Size != size {
+				continue
+			}
+			if len(tt.Fields) != 0 {
+				continue
+			}
 			t = tt
 		}
 	}
@@ -552,7 +568,9 @@ func findEmptyEnum(p *Parser, tag string) *c.EnumType {
 	if ok {
 		for i := 0; i < len(enums); i++ {
 			tt := enums[i]
-			if len(tt.Members) != 0 { continue }
+			if len(tt.Members) != 0 {
+				continue
+			}
 			t = tt
 		}
 	}
@@ -599,6 +617,8 @@ func (p *Parser) parseBase(base sym.Base, tag string) c.Type {
 		return c.UInt
 	case sym.BaseULong:
 		return c.ULong
+	case sym.BaseFloat:
+		return c.Float
 	default:
 		panic(fmt.Errorf("base type %q not yet supported", base))
 	}
