@@ -19,6 +19,63 @@ import (
 // Type definitions header file name.
 const typesName = "types.h"
 
+func dumpUnion(u *c.UnionType, f *os.File) error {
+	for _, g := range u.Fields {
+		switch t := g.Type.(type) {
+		case *c.StructType:
+			if !t.Emitted {
+				dumpStruct(t, f)
+			}
+		case *c.ArrayType:
+			switch tt := t.Elem.(type) {
+			case *c.StructType:
+				if !tt.Emitted {
+					dumpStruct(tt, f)
+				}
+			default:
+				break
+			}
+		case *c.UnionType:
+			dumpUnion(t, f)
+		default:
+			break
+		}
+	}
+	if _, err := fmt.Fprintf(f, "%s;\n\n", u.Def()); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+func dumpStruct(s *c.StructType, f *os.File) error {
+	for _, g := range s.Fields {
+		switch t := g.Type.(type) {
+		case *c.StructType:
+			if !t.Emitted {
+				dumpStruct(t, f)
+			}
+		case *c.ArrayType:
+			switch tt := t.Elem.(type) {
+			case *c.StructType:
+				if !tt.Emitted {
+					dumpStruct(tt, f)
+				}
+			default:
+				break
+			}
+		case *c.UnionType:
+			dumpUnion(t, f)
+		default:
+			break
+		}
+	}
+	s.Emitted = true
+	if _, err := fmt.Fprintf(f, "%s\n\n", s.Def()); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
 // dumpTypes outputs the type information recorded by the parser to a C header
 // stored in the output directory.
 func dumpTypes(p *csym.Parser, outputDir string) error {
@@ -44,9 +101,7 @@ func dumpTypes(p *csym.Parser, outputDir string) error {
 	}
 	// Print structs.
 	for _, t := range p.Structs {
-		if _, err := fmt.Fprintf(f, "%s;\n\n", t.Def()); err != nil {
-			return errors.WithStack(err)
-		}
+		dumpStruct(t, f)
 	}
 	// Print unions.
 	for _, t := range p.Unions {

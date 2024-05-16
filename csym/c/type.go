@@ -53,6 +53,7 @@ type StructType struct {
 	Fields []Field
 	// Struct methods.
 	Methods []Field
+	Emitted bool
 }
 
 // String returns the string representation of the structure type.
@@ -65,6 +66,9 @@ func (t *StructType) Def() string {
 	buf := &strings.Builder{}
 	if t.Size > 0 {
 		fmt.Fprintf(buf, "// size: 0x%X\n", t.Size)
+	}
+	if len(t.Fields) == 0 {
+		buf.WriteString("/*")
 	}
 	if len(t.Tag) > 0 {
 		fmt.Fprintf(buf, "struct %s {\n", t.Tag)
@@ -89,7 +93,10 @@ func (t *StructType) Def() string {
 		}
 		fmt.Fprintf(buf, "\t// %s;\n", method)
 	}
-	buf.WriteString("}")
+	buf.WriteString("};")
+	if len(t.Fields) == 0 {
+		buf.WriteString("*/")
+	}
 	return buf.String()
 }
 

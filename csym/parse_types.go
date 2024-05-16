@@ -316,8 +316,9 @@ func (p *Parser) RmNilStructs() {
 
 func (p *Parser) emptyStruct(tag string, size uint32) *c.StructType {
 	t := &c.StructType{
-		Tag:  tag,
-		Size: size,
+		Tag:     tag,
+		Size:    size,
+		Emitted: false,
 	}
 	return p.AddStruct(t)
 }
