@@ -44,6 +44,10 @@ func (p *Parser) ParseDecls(syms []*sym.Symbol) {
 			switch body.Class {
 			case sym.ClassEXT, sym.ClassSTAT:
 				t := p.parseType(body.Type, body.Dims, body.Tag)
+				switch t.(type) {
+				case *c.PointerType:
+					body.Size = 4
+				}
 				p.parseGlobalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
 			case sym.ClassMOS, sym.ClassMOU, sym.ClassTPDEF, sym.ClassMOE, sym.ClassFIELD, sym.ClassEOS:
 				// nothing to do.
@@ -153,7 +157,7 @@ func (p *Parser) emptyFunc(name string, addr uint32) *c.FuncDecl {
 		},
 	}
 	p.curOverlay.Funcs = append(p.curOverlay.Funcs, f)
-	p.curOverlay.funcNames[name] = append(p.curOverlay.funcNames[name], f)
+	p.curOverlay.FuncNames[name] = append(p.curOverlay.FuncNames[name], f)
 	return f
 }
 
@@ -282,7 +286,7 @@ func (p *Parser) parseGlobalDecl(addr, size uint32, class sym.Class, t c.Type, n
 			},
 		}
 		p.curOverlay.Funcs = append(p.curOverlay.Funcs, f)
-		p.curOverlay.funcNames[name] = append(p.curOverlay.funcNames[name], f)
+		p.curOverlay.FuncNames[name] = append(p.curOverlay.FuncNames[name], f)
 		return
 	}
 	v := &c.VarDecl{
@@ -295,7 +299,7 @@ func (p *Parser) parseGlobalDecl(addr, size uint32, class sym.Class, t c.Type, n
 		},
 	}
 	p.curOverlay.Vars = append(p.curOverlay.Vars, v)
-	p.curOverlay.varNames[name] = append(p.curOverlay.varNames[name], v)
+	p.curOverlay.VarNames[name] = append(p.curOverlay.VarNames[name], v)
 }
 
 // parseOverlay parses an overlay symbol.
@@ -304,8 +308,8 @@ func (p *Parser) parseOverlay(addr uint32, body *sym.Overlay) {
 		Addr:      addr,
 		ID:        body.ID,
 		Length:    body.Length,
-		varNames:  make(map[string][]*c.VarDecl),
-		funcNames: make(map[string][]*c.FuncDecl),
+		VarNames:  make(map[string][]*c.VarDecl),
+		FuncNames: make(map[string][]*c.FuncDecl),
 	}
 	p.Overlays = append(p.Overlays, overlay)
 	p.overlayIDs[overlay.ID] = overlay
@@ -318,7 +322,7 @@ func findFunc(p *Parser, name string, addr uint32) (*c.FuncDecl, *c.FuncType) {
 	name = validName(name)
 	var f *c.FuncDecl = nil
 	nameExists := false
-	funcs, ok := p.curOverlay.funcNames[name]
+	funcs, ok := p.curOverlay.FuncNames[name]
 	if ok {
 		nameExists = len(funcs) > 0
 		for i := 0; i < len(funcs); i++ {
@@ -335,7 +339,7 @@ func findFunc(p *Parser, name string, addr uint32) (*c.FuncDecl, *c.FuncType) {
 	if f == nil {
 		f = p.emptyFunc(name, addr)
 		if nameExists {
-			f.Var.Name = UniqueFuncName(p.curOverlay.funcNames, f)
+			f.Var.Name = UniqueFuncName(p.curOverlay.FuncNames, f)
 		}
 		log.Printf("unable to locate function %q, created void", name)
 	}

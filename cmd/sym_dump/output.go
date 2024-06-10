@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pkg/errors"
-	"github.com/rickypai/natsort"
 	"github.com/mefistotelis/psx_mnd_sym/csym"
 	"github.com/mefistotelis/psx_mnd_sym/csym/c"
+	"github.com/pkg/errors"
+	"github.com/rickypai/natsort"
 )
 
 // --- [ Type definitions ] ----------------------------------------------------
@@ -125,6 +125,7 @@ const (
 	declsName = "decls.h"
 	// Overlay header file name format string.
 	overlayNameFormat = "overlay_%x.h"
+	symbolNameFormat  = "symbols.%x.txt"
 )
 
 // dumpDecls outputs the declarations recorded by the parser to C headers stored
@@ -153,6 +154,99 @@ func dumpDecls(p *csym.Parser, outputDir string) error {
 		}
 		defer f.Close()
 		if err := dumpOverlay(f, overlay); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+	return nil
+}
+
+func dumpSymbols(p *csym.Parser, outputDir string) error {
+	// Create output file.
+	symbolName := fmt.Sprintf(symbolNameFormat, p.Overlay.ID)
+	symbolPath := filepath.Join(outputDir, symbolName)
+	fmt.Println("creating:", symbolPath)
+	f, err := os.Create(symbolPath)
+	if err != nil {
+		return errors.Wrapf(err, "unable to create symbol file %q", symbolPath)
+	}
+	defer f.Close()
+	// Store symbols for default binary.
+	if err := dumpOverlaySymbols(f, p.Overlay); err != nil {
+		return errors.WithStack(err)
+	}
+	// Store symbols for overlays.
+	for _, overlay := range p.Overlays {
+		symbolName := fmt.Sprintf(symbolNameFormat, overlay.ID)
+		symbolPath := filepath.Join(outputDir, symbolName)
+		fmt.Println("creating:", symbolPath)
+		f, err := os.Create(symbolPath)
+		if err != nil {
+			return errors.Wrapf(err, "unable to create symbol file %q", symbolPath)
+		}
+		defer f.Close()
+		if err := dumpOverlaySymbols(f, overlay); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+	return nil
+}
+
+func dumpOverlaySymbols(w io.Writer, overlay *csym.Overlay) error {
+	if overlay.Addr != 0 || overlay.ID != 0 || overlay.Length != 0 {
+		if _, err := fmt.Fprintf(w, "\n//Overlay_%X = 0x%08X; // size: 0x%X\n", overlay.ID, overlay.Addr, overlay.Length); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+	sort.Slice(overlay.Symbols, func(i, j int) bool {
+		return overlay.Symbols[i].Addr < overlay.Symbols[j].Addr
+	})
+	var last_path = ""
+	// Print symbols.
+	for _, s := range overlay.Symbols {
+		var v = overlay.VarNames[s.Name]
+		var f = overlay.FuncNames[s.Name]
+
+		for _, ff := range f {
+			if ff.Addr == s.Addr && ff.Path != last_path {
+				if _, err := fmt.Fprintf(w, "//%s\n", ff.Path); err != nil {
+					return errors.WithStack(err)
+				}
+				last_path = ff.Path
+				break
+			}
+		}
+
+		if strings.HasSuffix(s.Name, "_size") && s.Addr < 0x80000000 ||
+			strings.HasSuffix(s.Name, "_org") ||
+			strings.HasSuffix(s.Name, "_orgend") ||
+			strings.HasSuffix(s.Name, "_obj") ||
+			strings.HasSuffix(s.Name, "_objend") {
+			if _, err := fmt.Fprintf(w, "//"); err != nil {
+				return errors.WithStack(err)
+			}
+		}
+		if _, err := fmt.Fprintf(w, "%s = 0x%08X;", s.Name, s.Addr); err != nil {
+			return errors.WithStack(err)
+		}
+		for _, vv := range v {
+			if vv.Addr == s.Addr && vv.Size != 0 {
+				if _, err := fmt.Fprintf(w, " // size:0x%X", vv.Size); err != nil {
+					return errors.WithStack(err)
+				}
+				break
+			}
+		}
+
+		for _, ff := range f {
+			if ff.Addr == s.Addr {
+				if _, err := fmt.Fprintf(w, " // type:func"); err != nil {
+					return errors.WithStack(err)
+				}
+				break
+			}
+		}
+
+		if _, err := fmt.Fprintf(w, "\n"); err != nil {
 			return errors.WithStack(err)
 		}
 	}

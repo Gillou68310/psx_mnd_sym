@@ -2,7 +2,7 @@
 package csym
 
 import (
-	"github.com/mefistotelis/psx_mnd_sym"
+	sym "github.com/mefistotelis/psx_mnd_sym"
 	"github.com/mefistotelis/psx_mnd_sym/csym/c"
 )
 
@@ -47,10 +47,13 @@ type Parser struct {
 // NewParser returns a new parser.
 func NewParser(opts *sym.Options) *Parser {
 	overlay := &Overlay{
-		varNames:  make(map[string][]*c.VarDecl),
-		funcNames: make(map[string][]*c.FuncDecl),
+		ID:        0,
+		Addr:      0,
+		Length:    0,
+		VarNames:  make(map[string][]*c.VarDecl),
+		FuncNames: make(map[string][]*c.FuncDecl),
 	}
-	return &Parser{
+	parser := &Parser{
 		StructTags:  make(map[string][]*c.StructType),
 		UnionTags:   make(map[string][]*c.UnionType),
 		EnumTags:    make(map[string][]*c.EnumType),
@@ -61,6 +64,8 @@ func NewParser(opts *sym.Options) *Parser {
 		curOverlay:  overlay,
 		opts:        opts,
 	}
+	parser.overlayIDs[overlay.ID] = overlay
+	return parser
 }
 
 // An Overlay is an overlay appended to the end of the executable.
@@ -76,10 +81,10 @@ type Overlay struct {
 	Vars []*c.VarDecl
 	// Function delcarations.
 	Funcs []*c.FuncDecl
-	// varNames maps from variable name to variable declaration.
-	varNames map[string][]*c.VarDecl
-	// funcNames maps from function name to function declaration.
-	funcNames map[string][]*c.FuncDecl
+	// VarNames maps from variable name to variable declaration.
+	VarNames map[string][]*c.VarDecl
+	// FuncNames maps from function name to function declaration.
+	FuncNames map[string][]*c.FuncDecl
 
 	// Symbols.
 	Symbols []*Symbol

@@ -9,11 +9,11 @@ import (
 	"os"
 	"sort"
 
-	"github.com/pkg/errors"
-	"github.com/rickypai/natsort"
-	"github.com/mefistotelis/psx_mnd_sym"
+	sym "github.com/mefistotelis/psx_mnd_sym"
 	"github.com/mefistotelis/psx_mnd_sym/csym"
 	"github.com/mefistotelis/psx_mnd_sym/csym/c"
+	"github.com/pkg/errors"
+	"github.com/rickypai/natsort"
 )
 
 // usage prints usage information.
@@ -43,6 +43,8 @@ func main() {
 		splitSrc bool
 		// Output C types.
 		outputTypes bool
+		// Output symbols.
+		outputSyms bool
 		// Verbosity level.
 		opts sym.Options
 	)
@@ -53,6 +55,7 @@ func main() {
 	flag.BoolVar(&splitSrc, "src", false, "split output into source files")
 	flag.BoolVar(&outputTypes, "types", false, "output C types")
 	flag.BoolVar(&opts.Verbose, "v", false, "show verbose messages")
+	flag.BoolVar(&outputSyms, "s", false, "output symbols")
 	flag.Usage = usage
 	flag.Parse()
 	if merge && outputIDA {
@@ -68,7 +71,7 @@ func main() {
 			log.Fatalf("%+v", err)
 		}
 		switch {
-		case outputC, outputIDA:
+		case outputC, outputIDA, outputSyms:
 			// Parse C types and declarations.
 			p := csym.NewParser(&opts)
 			if merge {
@@ -80,7 +83,7 @@ func main() {
 			p.MakeNamesUnique()
 			// Output once for each files if not in merge mode.
 			if !merge {
-				if err := dump(p, outputDir, outputC, outputTypes, outputIDA, splitSrc, merge); err != nil {
+				if err := dump(p, outputDir, outputC, outputTypes, outputIDA, splitSrc, outputSyms, merge); err != nil {
 					log.Fatalf("%+v", err)
 				}
 			}
@@ -93,7 +96,7 @@ func main() {
 			p.ParseTypes(f.Syms)
 			// Output once for each files if not in merge mode.
 			if !merge {
-				if err := dump(p, outputDir, outputC, outputTypes, outputIDA, splitSrc, merge); err != nil {
+				if err := dump(p, outputDir, outputC, outputTypes, outputIDA, splitSrc, outputSyms, merge); err != nil {
 					log.Fatalf("%+v", err)
 				}
 			}
@@ -108,7 +111,7 @@ func main() {
 		skipAddrDiff := true
 		skipLineDiff := true
 		p := pruneDuplicates(ps, skipAddrDiff, skipLineDiff, &opts)
-		if err := dump(p, outputDir, outputC, outputTypes, outputIDA, splitSrc, merge); err != nil {
+		if err := dump(p, outputDir, outputC, outputTypes, outputIDA, splitSrc, outputSyms, merge); err != nil {
 			log.Fatalf("%+v", err)
 		}
 	}
@@ -330,13 +333,18 @@ func addUniqueEnums(dst *csym.Parser, p *csym.Parser, pnum int, fakeCount *int, 
 
 // dump dumps the declarations of the parser to the given output directory, in
 // the format specified.
-func dump(p *csym.Parser, outputDir string, outputC, outputTypes, outputIDA, splitSrc, merge bool) error {
+func dump(p *csym.Parser, outputDir string, outputC, outputTypes, outputIDA, splitSrc, outputSyms, merge bool) error {
+	if err := initOutputDir(outputDir); err != nil {
+		return errors.WithStack(err)
+	}
+
 	switch {
-	case outputC:
-		// Output C types and declarations.
-		if err := initOutputDir(outputDir); err != nil {
+	case outputSyms:
+		if err := dumpSymbols(p, outputDir); err != nil {
 			return errors.WithStack(err)
 		}
+	case outputC:
+		// Output C types and declarations.
 		if err := dumpTypes(p, outputDir); err != nil {
 			return errors.WithStack(err)
 		}
@@ -351,17 +359,11 @@ func dump(p *csym.Parser, outputDir string, outputC, outputTypes, outputIDA, spl
 		}
 	case outputTypes:
 		// Output C types.
-		if err := initOutputDir(outputDir); err != nil {
-			return errors.WithStack(err)
-		}
 		if err := dumpTypes(p, outputDir); err != nil {
 			return errors.WithStack(err)
 		}
 	case outputIDA:
 		// Output IDA scripts.
-		if err := initOutputDir(outputDir); err != nil {
-			return errors.WithStack(err)
-		}
 		if err := dumpIDAScripts(p, outputDir); err != nil {
 			return errors.WithStack(err)
 		}
