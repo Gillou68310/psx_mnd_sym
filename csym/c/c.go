@@ -17,6 +17,7 @@ type VarDecl struct {
 	Class StorageClass
 	// Underlying variable.
 	Var
+	Emitted bool
 }
 
 var _Registers = [...]string{
@@ -54,10 +55,10 @@ func (v *VarDecl) Def() string {
 			}
 		}
 	}
-	if v.Size > 0 {
+	if v.Size > 0 && v.Class != Typedef {
 		fmt.Fprintf(buf, "// size: 0x%X\n", v.Size)
 	}
-	if v.Class == 0 {
+	if v.Class == 0 || v.Class == Auto || v.Class == Register {
 		fmt.Fprintf(buf, "%s", v.Var)
 	} else {
 		fmt.Fprintf(buf, "%s %s", v.Class, v.Var)

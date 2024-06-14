@@ -54,11 +54,16 @@ type StructType struct {
 	// Struct methods.
 	Methods []Field
 	Emitted bool
+	Typedef []*VarDecl
 }
 
 // String returns the string representation of the structure type.
 func (t *StructType) String() string {
-	return fmt.Sprintf("struct %s", t.Tag)
+	if len(t.Typedef) == 1 {
+		return t.Typedef[0].String()
+	} else {
+		return fmt.Sprintf("struct %s", t.Tag)
+	}
 }
 
 // Def returns the C syntax representation of the definition of the type.
@@ -70,16 +75,22 @@ func (t *StructType) Def() string {
 	if len(t.Fields) == 0 {
 		buf.WriteString("/*")
 	}
-	if len(t.Tag) > 0 {
+	if len(t.Typedef) == 1 {
+		if strings.Contains(t.Tag, "fake") {
+			buf.WriteString("typedef struct {\n")
+		} else {
+			fmt.Fprintf(buf, "typedef struct %s {\n", t.Tag)
+		}
+	} else if len(t.Tag) > 0 {
 		fmt.Fprintf(buf, "struct %s {\n", t.Tag)
 	} else {
 		buf.WriteString("struct {\n")
 	}
 	for _, field := range t.Fields {
 		if field.Size > 0 {
-			fmt.Fprintf(buf, "\t// offset: %04X (%d bytes)\n", field.Offset, field.Size)
+			fmt.Fprintf(buf, "\t// offset: 0x%04X (%d bytes)\n", field.Offset, field.Size)
 		} else if len(t.Fields) > 1 && t.Fields[1].Offset > 0 {
-			fmt.Fprintf(buf, "\t// offset: %04X\n", field.Offset)
+			fmt.Fprintf(buf, "\t// offset: 0x%04X\n", field.Offset)
 		}
 		fmt.Fprintf(buf, "\t%s;\n", field)
 	}
@@ -87,13 +98,25 @@ func (t *StructType) Def() string {
 	// out.
 	for _, method := range t.Methods {
 		if method.Size > 0 {
-			fmt.Fprintf(buf, "\t// offset: %04X (%d bytes)\n", method.Offset, method.Size)
-		} else if len(t.Fields) > 1 && t.Fields[1].Offset > 0 {
-			fmt.Fprintf(buf, "\t// offset: %04X\n", method.Offset)
+			fmt.Fprintf(buf, "\t// offset: 0x%04X (%d bytes)\n", method.Offset, method.Size)
+		} else {
+			fmt.Fprintf(buf, "\t// offset: 0x%04X\n", method.Offset)
 		}
 		fmt.Fprintf(buf, "\t// %s;\n", method)
 	}
-	buf.WriteString("};")
+	if len(t.Typedef) == 1 {
+		switch t.Typedef[0].Type.(type) {
+		case *PointerType:
+			fmt.Fprintf(buf, "}*%s;", t.Typedef[0].String())
+		case *StructType:
+			fmt.Fprintf(buf, "}%s;", t.Typedef[0].String())
+		default:
+			panic("")
+		}
+		t.Typedef[0].Emitted = true
+	} else {
+		buf.WriteString("};")
+	}
 	if len(t.Fields) == 0 {
 		buf.WriteString("*/")
 	}
@@ -109,12 +132,18 @@ type UnionType struct {
 	// Union tag.
 	Tag string
 	// Union fields.
-	Fields []Field
+	Fields  []Field
+	Typedef []*VarDecl
+	Emitted bool
 }
 
 // String returns the string representation of the union type.
 func (t *UnionType) String() string {
-	return fmt.Sprintf("union %s", t.Tag)
+	if len(t.Typedef) == 1 {
+		return t.Typedef[0].String()
+	} else {
+		return fmt.Sprintf("union %s", t.Tag)
+	}
 }
 
 // Def returns the C syntax representation of the definition of the type.
@@ -123,20 +152,38 @@ func (t *UnionType) Def() string {
 	if t.Size > 0 {
 		fmt.Fprintf(buf, "// size: 0x%X\n", t.Size)
 	}
-	if len(t.Tag) > 0 {
+	if len(t.Typedef) == 1 {
+		if strings.Contains(t.Tag, "fake") {
+			buf.WriteString("typedef union {\n")
+		} else {
+			fmt.Fprintf(buf, "typedef union %s {\n", t.Tag)
+		}
+	} else if len(t.Tag) > 0 {
 		fmt.Fprintf(buf, "union %s {\n", t.Tag)
 	} else {
 		buf.WriteString("union {\n")
 	}
 	for _, field := range t.Fields {
 		if field.Size > 0 {
-			fmt.Fprintf(buf, "\t// offset: %04X (%d bytes)\n", field.Offset, field.Size)
-		} else if len(t.Fields) > 1 && t.Fields[1].Offset > 0 {
-			fmt.Fprintf(buf, "\t// offset: %04X\n", field.Offset)
+			fmt.Fprintf(buf, "\t// offset: 0x%04X (%d bytes)\n", field.Offset, field.Size)
+		} else {
+			fmt.Fprintf(buf, "\t// offset: 0x%04X\n", field.Offset)
 		}
 		fmt.Fprintf(buf, "\t%s;\n", field)
 	}
-	buf.WriteString("}")
+	if len(t.Typedef) == 1 {
+		switch t.Typedef[0].Type.(type) {
+		case *PointerType:
+			fmt.Fprintf(buf, "}*%s", t.Typedef[0].String())
+		case *UnionType:
+			fmt.Fprintf(buf, "}%s", t.Typedef[0].String())
+		default:
+			panic("")
+		}
+		t.Typedef[0].Emitted = true
+	} else {
+		buf.WriteString("}")
+	}
 	return buf.String()
 }
 
@@ -148,17 +195,28 @@ type EnumType struct {
 	Tag string
 	// Enum members.
 	Members []*EnumMember
+	Typedef []*VarDecl
 }
 
 // String returns the string representation of the enum type.
 func (t *EnumType) String() string {
-	return fmt.Sprintf("enum %s", t.Tag)
+	if len(t.Typedef) == 1 {
+		return t.Typedef[0].String()
+	} else {
+		return fmt.Sprintf("enum %s", t.Tag)
+	}
 }
 
 // Def returns the C syntax representation of the definition of the type.
 func (t *EnumType) Def() string {
 	buf := &strings.Builder{}
-	if len(t.Tag) > 0 {
+	if len(t.Typedef) == 1 {
+		if strings.Contains(t.Tag, "fake") {
+			buf.WriteString("typedef enum {\n")
+		} else {
+			fmt.Fprintf(buf, "typedef enum %s {\n", t.Tag)
+		}
+	} else if len(t.Tag) > 0 {
 		fmt.Fprintf(buf, "enum %s {\n", t.Tag)
 	} else {
 		buf.WriteString("enum {\n")
@@ -177,7 +235,12 @@ func (t *EnumType) Def() string {
 	if err := w.Flush(); err != nil {
 		panic(fmt.Errorf("unable to flush tabwriter; %v", err))
 	}
-	buf.WriteString("}")
+	if len(t.Typedef) == 1 {
+		fmt.Fprintf(buf, "}%s", t.Typedef[0].String())
+		t.Typedef[0].Emitted = true
+	} else {
+		buf.WriteString("}")
+	}
 	return buf.String()
 }
 
@@ -339,9 +402,9 @@ func fakeUnionString(t *UnionType) string {
 	buf.WriteString("\tunion {\n")
 	for _, field := range t.Fields {
 		if field.Size > 0 {
-			fmt.Fprintf(buf, "\t\t// offset: %04X (%d bytes)\n", field.Offset, field.Size)
+			fmt.Fprintf(buf, "\t\t// offset: 0x%04X (%d bytes)\n", field.Offset, field.Size)
 		} else if len(t.Fields) > 1 && t.Fields[1].Offset > 0 {
-			fmt.Fprintf(buf, "\t\t// offset: %04X\n", field.Offset)
+			fmt.Fprintf(buf, "\t\t// offset: 0x%04X\n", field.Offset)
 		}
 		fmt.Fprintf(buf, "\t\t%s;\n", field)
 	}

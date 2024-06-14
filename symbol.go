@@ -13,6 +13,7 @@ import (
 
 // A Symbol is a PS1 symbol.
 type Symbol struct {
+	Offset int
 	// Symbol header.
 	Hdr *SymbolHeader
 	// Symbol body.

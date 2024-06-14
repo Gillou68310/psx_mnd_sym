@@ -8,27 +8,6 @@ import (
 
 // Parser tracks type information used for parsing.
 type Parser struct {
-	// Type information.
-
-	// Struct maps from struct tag to struct types.
-	StructTags map[string][]*c.StructType
-	// Unions maps from union tag to union types.
-	UnionTags map[string][]*c.UnionType
-	// Enums maps from enum tag to enum types.
-	EnumTags map[string][]*c.EnumType
-	// types maps from type name to underlying type definition.
-	Types map[string]c.Type
-	// Structs in order of occurrence in SYM file.
-	Structs []*c.StructType
-	// Unions in order of occurrence in SYM file.
-	Unions []*c.UnionType
-	// Enums in order of occurrence in SYM file.
-	Enums []*c.EnumType
-	// Type definitions in order of occurrence in SYM file.
-	Typedefs []c.Type
-	// Tracks unique enum member names.
-	enumMembers map[string]bool
-
 	// Declarations.
 	*Overlay // default binary
 
@@ -38,7 +17,7 @@ type Parser struct {
 	overlayIDs map[uint32]*Overlay
 
 	// Current overlay.
-	curOverlay *Overlay
+	CurOverlay *Overlay
 
 	// Option switches.
 	opts *sym.Options
@@ -47,22 +26,21 @@ type Parser struct {
 // NewParser returns a new parser.
 func NewParser(opts *sym.Options) *Parser {
 	overlay := &Overlay{
-		ID:        0,
-		Addr:      0,
-		Length:    0,
-		VarNames:  make(map[string][]*c.VarDecl),
-		FuncNames: make(map[string][]*c.FuncDecl),
+		ID:         0,
+		Addr:       0,
+		Length:     0,
+		VarNames:   make(map[string][]*c.VarDecl),
+		FuncNames:  make(map[string][]*c.FuncDecl),
+		StructTags: make(map[string][]*c.StructType),
+		UnionTags:  make(map[string][]*c.UnionType),
+		EnumTags:   make(map[string][]*c.EnumType),
+		Types:      make(map[string][]*c.VarDecl),
 	}
 	parser := &Parser{
-		StructTags:  make(map[string][]*c.StructType),
-		UnionTags:   make(map[string][]*c.UnionType),
-		EnumTags:    make(map[string][]*c.EnumType),
-		Types:       make(map[string]c.Type),
-		enumMembers: make(map[string]bool),
-		Overlay:     overlay,
-		overlayIDs:  make(map[uint32]*Overlay),
-		curOverlay:  overlay,
-		opts:        opts,
+		Overlay:    overlay,
+		overlayIDs: make(map[uint32]*Overlay),
+		CurOverlay: overlay,
+		opts:       opts,
 	}
 	parser.overlayIDs[overlay.ID] = overlay
 	return parser
@@ -90,6 +68,23 @@ type Overlay struct {
 	Symbols []*Symbol
 	// Source file line numbers.
 	Lines []*Line
+
+	// Struct maps from struct tag to struct types.
+	StructTags map[string][]*c.StructType
+	// Unions maps from union tag to union types.
+	UnionTags map[string][]*c.UnionType
+	// Enums maps from enum tag to enum types.
+	EnumTags map[string][]*c.EnumType
+	// types maps from type name to underlying type definition.
+	Types map[string][]*c.VarDecl
+	// Structs in order of occurrence in SYM file.
+	Structs []*c.StructType
+	// Unions in order of occurrence in SYM file.
+	Unions []*c.UnionType
+	// Enums in order of occurrence in SYM file.
+	Enums []*c.EnumType
+	// Type definitions in order of occurrence in SYM file.
+	Typedefs []*c.VarDecl
 }
 
 // A Symbol associates a symbol name with an address.

@@ -20,18 +20,17 @@ import (
 const typesName = "types.h"
 
 func dumpUnion(u *c.UnionType, f *os.File) error {
+	if u.Emitted {
+		return nil
+	}
 	for _, g := range u.Fields {
 		switch t := g.Type.(type) {
 		case *c.StructType:
-			if !t.Emitted {
-				dumpStruct(t, f)
-			}
+			dumpStruct(t, f)
 		case *c.ArrayType:
 			switch tt := t.Elem.(type) {
 			case *c.StructType:
-				if !tt.Emitted {
-					dumpStruct(tt, f)
-				}
+				dumpStruct(tt, f)
 			default:
 				break
 			}
@@ -41,6 +40,7 @@ func dumpUnion(u *c.UnionType, f *os.File) error {
 			break
 		}
 	}
+	u.Emitted = true
 	if _, err := fmt.Fprintf(f, "%s;\n\n", u.Def()); err != nil {
 		return errors.WithStack(err)
 	}
@@ -48,18 +48,17 @@ func dumpUnion(u *c.UnionType, f *os.File) error {
 }
 
 func dumpStruct(s *c.StructType, f *os.File) error {
+	if s.Emitted {
+		return nil
+	}
 	for _, g := range s.Fields {
 		switch t := g.Type.(type) {
 		case *c.StructType:
-			if !t.Emitted {
-				dumpStruct(t, f)
-			}
+			dumpStruct(t, f)
 		case *c.ArrayType:
 			switch tt := t.Elem.(type) {
 			case *c.StructType:
-				if !tt.Emitted {
-					dumpStruct(tt, f)
-				}
+				dumpStruct(tt, f)
 			default:
 				break
 			}
@@ -88,31 +87,88 @@ func dumpTypes(p *csym.Parser, outputDir string) error {
 	}
 	defer f.Close()
 	// Print predeclared identifiers.
-	if def, ok := p.Types["bool"]; ok {
-		if _, err := fmt.Fprintf(f, "%s;\n\n", def.Def()); err != nil {
+	if def, ok := p.Overlay.Types["bool"]; ok {
+		if _, err := fmt.Fprintf(f, "%s;\n", def[0].Def()); err != nil {
 			return errors.WithStack(err)
 		}
 	}
+	fmt.Fprintf(f, "typedef signed char s8;\n")
+	fmt.Fprintf(f, "typedef unsigned char u8;\n")
+	fmt.Fprintf(f, "typedef short s16;\n")
+	fmt.Fprintf(f, "typedef unsigned short u16;\n")
+	fmt.Fprintf(f, "typedef long s32;\n")
+	fmt.Fprintf(f, "typedef unsigned long u32;\n")
+	fmt.Fprintf(f, "typedef float f32;\n\n")
+
 	// Print enums.
-	for _, t := range p.Enums {
+	for _, t := range p.Overlay.Enums {
 		if _, err := fmt.Fprintf(f, "%s;\n\n", t.Def()); err != nil {
 			return errors.WithStack(err)
 		}
 	}
 	// Print structs.
-	for _, t := range p.Structs {
+	for _, t := range p.Overlay.Structs {
 		dumpStruct(t, f)
 	}
 	// Print unions.
-	for _, t := range p.Unions {
-		if _, err := fmt.Fprintf(f, "%s;\n\n", t.Def()); err != nil {
-			return errors.WithStack(err)
-		}
+	for _, t := range p.Overlay.Unions {
+		dumpUnion(t, f)
 	}
 	// Print typedefs.
-	for _, def := range p.Typedefs {
-		if _, err := fmt.Fprintf(f, "%s;\n\n", def.Def()); err != nil {
-			return errors.WithStack(err)
+	for _, def := range p.Overlay.Typedefs {
+		if !def.Emitted {
+			if _, err := fmt.Fprintf(f, "%s;\n\n", def.Def()); err != nil {
+				return errors.WithStack(err)
+			}
+		}
+	}
+
+	for _, overlay := range p.Overlays {
+		// Create output file.
+		typeName := fmt.Sprintf("types_%x.h", overlay.ID)
+		typesPath := filepath.Join(outputDir, typeName)
+		fmt.Println("creating:", typesPath)
+		f, err := os.Create(typesPath)
+		if err != nil {
+			return errors.Wrapf(err, "unable to create declarations header %q", typesPath)
+		}
+		defer f.Close()
+		// Print predeclared identifiers.
+		if def, ok := overlay.Types["bool"]; ok {
+			if _, err := fmt.Fprintf(f, "%s;\n", def[0].Def()); err != nil {
+				return errors.WithStack(err)
+			}
+		}
+		fmt.Fprintf(f, "typedef signed char s8;\n")
+		fmt.Fprintf(f, "typedef unsigned char u8;\n")
+		fmt.Fprintf(f, "typedef short s16;\n")
+		fmt.Fprintf(f, "typedef unsigned short u16;\n")
+		fmt.Fprintf(f, "typedef long s32;\n")
+		fmt.Fprintf(f, "typedef unsigned long u32;\n")
+		fmt.Fprintf(f, "typedef float f32;\n\n")
+
+		// Print enums.
+		fmt.Fprintf(f, "// Overlay %d\n", overlay.ID)
+		for _, t := range overlay.Enums {
+			if _, err := fmt.Fprintf(f, "%s;\n\n", t.Def()); err != nil {
+				return errors.WithStack(err)
+			}
+		}
+		// Print structs.
+		for _, t := range overlay.Structs {
+			dumpStruct(t, f)
+		}
+		// Print unions.
+		for _, t := range overlay.Unions {
+			dumpUnion(t, f)
+		}
+		// Print typedefs.
+		for _, def := range overlay.Typedefs {
+			if !def.Emitted {
+				if _, err := fmt.Fprintf(f, "%s;\n\n", def.Def()); err != nil {
+					return errors.WithStack(err)
+				}
+			}
 		}
 	}
 	return nil
@@ -265,12 +321,18 @@ func dumpOverlay(w io.Writer, overlay *csym.Overlay) error {
 		}
 	}
 	// Print variable declarations.
+	sort.Slice(overlay.Vars, func(i, j int) bool {
+		return overlay.Vars[i].Addr < overlay.Vars[j].Addr
+	})
 	for _, v := range overlay.Vars {
 		if _, err := fmt.Fprintf(w, "%s;\n\n", v.Def()); err != nil {
 			return errors.WithStack(err)
 		}
 	}
 	// Print function declarations.
+	sort.Slice(overlay.Funcs, func(i, j int) bool {
+		return overlay.Funcs[i].Addr < overlay.Funcs[j].Addr
+	})
 	for _, f := range overlay.Funcs {
 		if _, err := fmt.Fprintf(w, "%s\n\n", f.Def()); err != nil {
 			return errors.WithStack(err)

@@ -27,9 +27,7 @@ type File struct {
 // String returns the string representation of the symbol file.
 func (f *File) String() string {
 	buf := &strings.Builder{}
-	offset := 0
 	fmt.Fprintln(buf, f.Hdr)
-	offset += binary.Size(*f.Hdr)
 	var line int
 	for _, sym := range f.Syms {
 		bodyStr := sym.Body.String()
@@ -59,12 +57,11 @@ func (f *File) String() string {
 		}
 		if len(bodyStr) == 0 {
 			// Symbol without body.
-			fmt.Fprintf(buf, "%06x: %s\n", offset, sym.Hdr)
+			fmt.Fprintf(buf, "%06x: %s\n", sym.Offset, sym.Hdr)
 
 		} else {
-			fmt.Fprintf(buf, "%06x: %s %s\n", offset, sym.Hdr, bodyStr)
+			fmt.Fprintf(buf, "%06x: %s %s\n", sym.Offset, sym.Hdr, bodyStr)
 		}
-		offset += sym.Size()
 	}
 	return buf.String()
 }
@@ -89,7 +86,9 @@ Target unit %d`
 
 // ParseFile parses the given PS1 symbol file.
 func ParseFile(path string, opts *Options) (*File, error) {
-	if opts.Verbose { fmt.Printf("Opening '%s'...\n", path) }
+	if opts.Verbose {
+		fmt.Printf("Opening '%s'...\n", path)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -115,8 +114,12 @@ func Parse(r io.Reader, opts *Options) (*File, error) {
 	f.Hdr = hdr
 	f.Opts = opts
 
-	if f.Opts.Verbose { fmt.Printf("Parsing flattened tags...\n") }
+	if f.Opts.Verbose {
+		fmt.Printf("Parsing flattened tags...\n")
+	}
 	// Parse symbols.
+	offset := 0
+	offset += binary.Size(*f.Hdr)
 	for {
 		sym, err := parseSymbol(br)
 		if err != nil {
@@ -125,9 +128,13 @@ func Parse(r io.Reader, opts *Options) (*File, error) {
 			}
 			return f, errors.WithStack(err)
 		}
+		sym.Offset = offset
 		f.Syms = append(f.Syms, sym)
+		offset += sym.Size()
 	}
-	if f.Opts.Verbose { fmt.Printf("Created %d symbol tags.\n", len(f.Syms)) }
+	if f.Opts.Verbose {
+		fmt.Printf("Created %d symbol tags.\n", len(f.Syms))
+	}
 	return f, nil
 }
 
