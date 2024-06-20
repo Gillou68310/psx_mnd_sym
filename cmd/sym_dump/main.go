@@ -34,8 +34,6 @@ func main() {
 		outputDir string
 		// Output IDA scripts.
 		outputIDA bool
-		// Merge SYM files.
-		merge bool
 		// Split output into source files.
 		splitSrc bool
 		// Output C types.
@@ -80,7 +78,7 @@ func main() {
 			}
 
 			// Output once for each files if not in merge mode.
-			if err := dump(p, outputDir, outputC, outputTypes, outputIDA, splitSrc, outputSyms, merge); err != nil {
+			if err := dump(p, outputDir, outputC, outputTypes, outputIDA, splitSrc, outputSyms); err != nil {
 				log.Fatalf("%+v", err)
 			}
 		default:
@@ -93,7 +91,7 @@ func main() {
 
 // dump dumps the declarations of the parser to the given output directory, in
 // the format specified.
-func dump(p *csym.Parser, outputDir string, outputC, outputTypes, outputIDA, splitSrc, outputSyms, merge bool) error {
+func dump(p *csym.Parser, outputDir string, outputC, outputTypes, outputIDA, splitSrc, outputSyms bool) error {
 	if err := initOutputDir(outputDir); err != nil {
 		return errors.WithStack(err)
 	}

@@ -19,58 +19,62 @@ import (
 // Type definitions header file name.
 const typesName = "types.h"
 
-func dumpUnion(u *c.UnionType, f *os.File) error {
+func dumpUnion(u *c.UnionType, f *os.File, force bool) error {
 	if u.Emitted {
 		return nil
 	}
 	for _, g := range u.Fields {
 		switch t := g.Type.(type) {
 		case *c.StructType:
-			dumpStruct(t, f)
+			dumpStruct(t, f, false)
 		case *c.ArrayType:
 			switch tt := t.Elem.(type) {
 			case *c.StructType:
-				dumpStruct(tt, f)
+				dumpStruct(tt, f, false)
 			default:
 				break
 			}
 		case *c.UnionType:
-			dumpUnion(t, f)
+			dumpUnion(t, f, false)
 		default:
 			break
 		}
 	}
-	u.Emitted = true
-	if _, err := fmt.Fprintf(f, "%s;\n\n", u.Def()); err != nil {
-		return errors.WithStack(err)
+	if force || !c.IsFakeTag(u.Tag) || len(u.Typedef) != 0 {
+		u.Emitted = true
+		if _, err := fmt.Fprintf(f, "%s;\n\n", u.Def()); err != nil {
+			return errors.WithStack(err)
+		}
 	}
 	return nil
 }
 
-func dumpStruct(s *c.StructType, f *os.File) error {
+func dumpStruct(s *c.StructType, f *os.File, force bool) error {
 	if s.Emitted {
 		return nil
 	}
 	for _, g := range s.Fields {
 		switch t := g.Type.(type) {
 		case *c.StructType:
-			dumpStruct(t, f)
+			dumpStruct(t, f, false)
 		case *c.ArrayType:
 			switch tt := t.Elem.(type) {
 			case *c.StructType:
-				dumpStruct(tt, f)
+				dumpStruct(tt, f, false)
 			default:
 				break
 			}
 		case *c.UnionType:
-			dumpUnion(t, f)
+			dumpUnion(t, f, false)
 		default:
 			break
 		}
 	}
-	s.Emitted = true
-	if _, err := fmt.Fprintf(f, "%s\n\n", s.Def()); err != nil {
-		return errors.WithStack(err)
+	if force || !c.IsFakeTag(s.Tag) || len(s.Typedef) != 0 {
+		s.Emitted = true
+		if _, err := fmt.Fprintf(f, "%s\n\n", s.Def()); err != nil {
+			return errors.WithStack(err)
+		}
 	}
 	return nil
 }
@@ -108,11 +112,17 @@ func dumpTypes(p *csym.Parser, outputDir string) error {
 	}
 	// Print structs.
 	for _, t := range p.Overlay.Structs {
-		dumpStruct(t, f)
+		dumpStruct(t, f, false)
+	}
+	for _, t := range p.Overlay.Structs {
+		dumpStruct(t, f, true)
 	}
 	// Print unions.
 	for _, t := range p.Overlay.Unions {
-		dumpUnion(t, f)
+		dumpUnion(t, f, false)
+	}
+	for _, t := range p.Overlay.Unions {
+		dumpUnion(t, f, true)
 	}
 	// Print typedefs.
 	for _, def := range p.Overlay.Typedefs {
@@ -156,11 +166,17 @@ func dumpTypes(p *csym.Parser, outputDir string) error {
 		}
 		// Print structs.
 		for _, t := range overlay.Structs {
-			dumpStruct(t, f)
+			dumpStruct(t, f, false)
+		}
+		for _, t := range overlay.Structs {
+			dumpStruct(t, f, true)
 		}
 		// Print unions.
 		for _, t := range overlay.Unions {
-			dumpUnion(t, f)
+			dumpUnion(t, f, false)
+		}
+		for _, t := range overlay.Unions {
+			dumpUnion(t, f, true)
 		}
 		// Print typedefs.
 		for _, def := range overlay.Typedefs {

@@ -382,8 +382,13 @@ func (v Var) String() string {
 		v.Name = buf.String()
 		v.Type = t.RetType
 		return v.String()
+	case *StructType:
+		if IsFakeTag(t.Tag) && len(t.Typedef) == 0 && !t.Emitted {
+			return fmt.Sprintf("%s %s", fakeStructString(t), v.Name)
+		}
+		return fmt.Sprintf("%s %s", t, v.Name)
 	case *UnionType:
-		if IsFakeTag(t.Tag) {
+		if IsFakeTag(t.Tag) && len(t.Typedef) == 0 && !t.Emitted {
 			return fmt.Sprintf("%s %s", fakeUnionString(t), v.Name)
 		}
 		return fmt.Sprintf("%s %s", t, v.Name)
@@ -408,6 +413,26 @@ func fakeUnionString(t *UnionType) string {
 		}
 		fmt.Fprintf(buf, "\t\t%s;\n", field)
 	}
+	t.Emitted = true
+	buf.WriteString("\t}")
+	return buf.String()
+}
+
+func fakeStructString(t *StructType) string {
+	buf := &strings.Builder{}
+	if t.Size > 0 {
+		fmt.Fprintf(buf, "// size: 0x%X\n", t.Size)
+	}
+	buf.WriteString("\tstruct {\n")
+	for _, field := range t.Fields {
+		if field.Size > 0 {
+			fmt.Fprintf(buf, "\t\t// offset: 0x%04X (%d bytes)\n", field.Offset, field.Size)
+		} else if len(t.Fields) > 1 && t.Fields[1].Offset > 0 {
+			fmt.Fprintf(buf, "\t\t// offset: 0x%04X\n", field.Offset)
+		}
+		fmt.Fprintf(buf, "\t\t%s;\n", field)
+	}
+	t.Emitted = true
 	buf.WriteString("\t}")
 	return buf.String()
 }

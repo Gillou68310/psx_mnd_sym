@@ -174,12 +174,17 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 				addParam(funcType, v)
 			}
 		case *sym.Def2:
-			t := p.parseType(body.Type, body.Dims, body.Tag, body.Size)
-			v := p.parseLocalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
-			if curBlock != nil {
-				addLocal(curBlock, v)
-			} else {
-				addParam(funcType, v)
+			switch body.Class {
+			case sym.ClassTPDEF:
+				p.parseTypedef(body.Type, body.Dims, body.Tag, body.Name, body.Size)
+			default:
+				t := p.parseType(body.Type, body.Dims, body.Tag, body.Size)
+				v := p.parseLocalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
+				if curBlock != nil {
+					addLocal(curBlock, v)
+				} else {
+					addParam(funcType, v)
+				}
 			}
 		default:
 			panic(fmt.Errorf("support for symbol type %T not yet implemented", body))
