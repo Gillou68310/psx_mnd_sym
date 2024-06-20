@@ -2,6 +2,7 @@ package csym
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 
@@ -146,14 +147,14 @@ func compareEnum(x, y *c.EnumType) bool {
 }
 
 // RemoveDuplicateTypes goes through parsed types and marks exact duplicates.
-func (p *Parser) RemoveDuplicateTypes() {
+func (p *Parser) RemoveDuplicateTypes(overlay *Overlay) {
 	if p.opts.Verbose {
-		fmt.Printf("Remove duplicate types...\n")
+		fmt.Printf("Remove duplicate types in overlay %d from overlay %d\n", p.CurOverlay.ID, overlay.ID)
 	}
-	p.removeStructsDuplicates()
-	p.removeUnionsDuplicates()
-	p.removeEnumsDuplicates()
-	p.removeTypedefsDuplicates()
+	p.removeStructsDuplicates(overlay)
+	p.removeUnionsDuplicates(overlay)
+	p.removeEnumsDuplicates(overlay)
+	p.removeTypedefsDuplicates(overlay)
 }
 
 func typedefExists(t *c.VarDecl, l []*c.VarDecl) bool {
@@ -166,15 +167,19 @@ func typedefExists(t *c.VarDecl, l []*c.VarDecl) bool {
 }
 
 // removeStructsDuplicates goes through parsed symbols and marks exact duplicates.
-func (p *Parser) removeStructsDuplicates() {
+func (p *Parser) removeStructsDuplicates(overlay *Overlay) {
 	// Create a type replacing map
 	typeRemap := make(map[c.Type]c.Type)
-	for i := 0; i < len(p.CurOverlay.Structs); i++ {
-		t1 := p.CurOverlay.Structs[i]
+	for i := 0; i < len(overlay.Structs); i++ {
+		t1 := overlay.Structs[i]
 		if _, ok := typeRemap[t1]; ok {
 			continue
 		}
-		for k := i + 1; k < len(p.CurOverlay.Structs); k++ {
+		var k = 0
+		if overlay == p.CurOverlay {
+			k = i + 1
+		}
+		for ; k < len(p.CurOverlay.Structs); k++ {
 			t2 := p.CurOverlay.Structs[k]
 			if _, ok := typeRemap[t2]; ok {
 				continue
@@ -186,6 +191,9 @@ func (p *Parser) removeStructsDuplicates() {
 				if !typedefExists(t2.Typedef[l], t1.Typedef) {
 					t1.Typedef = append(t1.Typedef, t2.Typedef[l])
 				}
+			}
+			if t2.IsRef {
+				t1.IsRef = true
 			}
 			typeRemap[t2] = t1
 		}
@@ -204,15 +212,19 @@ func (p *Parser) removeStructsDuplicates() {
 }
 
 // removeUnionsDuplicates goes through parsed symbols and marks exact duplicates.
-func (p *Parser) removeUnionsDuplicates() {
+func (p *Parser) removeUnionsDuplicates(overlay *Overlay) {
 	// Create a type replacing map
 	typeRemap := make(map[c.Type]c.Type)
-	for i := 0; i < len(p.CurOverlay.Unions); i++ {
-		t1 := p.CurOverlay.Unions[i]
+	for i := 0; i < len(overlay.Unions); i++ {
+		t1 := overlay.Unions[i]
 		if _, ok := typeRemap[t1]; ok {
 			continue
 		}
-		for k := i + 1; k < len(p.CurOverlay.Unions); k++ {
+		var k = 0
+		if overlay == p.CurOverlay {
+			k = i + 1
+		}
+		for ; k < len(p.CurOverlay.Unions); k++ {
 			t2 := p.CurOverlay.Unions[k]
 			if _, ok := typeRemap[t2]; ok {
 				continue
@@ -224,6 +236,9 @@ func (p *Parser) removeUnionsDuplicates() {
 				if !typedefExists(t2.Typedef[l], t1.Typedef) {
 					t1.Typedef = append(t1.Typedef, t2.Typedef[l])
 				}
+			}
+			if t2.IsRef {
+				t1.IsRef = true
 			}
 			typeRemap[t2] = t1
 		}
@@ -242,15 +257,19 @@ func (p *Parser) removeUnionsDuplicates() {
 }
 
 // removeEnumsDuplicates goes through parsed symbols and marks exact duplicates.
-func (p *Parser) removeEnumsDuplicates() {
+func (p *Parser) removeEnumsDuplicates(overlay *Overlay) {
 	// Create a type replacing map
 	typeRemap := make(map[c.Type]c.Type)
-	for i := 0; i < len(p.CurOverlay.Enums); i++ {
-		t1 := p.CurOverlay.Enums[i]
+	for i := 0; i < len(overlay.Enums); i++ {
+		t1 := overlay.Enums[i]
 		if _, ok := typeRemap[t1]; ok {
 			continue
 		}
-		for k := i + 1; k < len(p.CurOverlay.Enums); k++ {
+		var k = 0
+		if overlay == p.CurOverlay {
+			k = i + 1
+		}
+		for ; k < len(p.CurOverlay.Enums); k++ {
 			t2 := p.CurOverlay.Enums[k]
 			if _, ok := typeRemap[t2]; ok {
 				continue
@@ -279,25 +298,28 @@ func (p *Parser) removeEnumsDuplicates() {
 	}
 }
 
-func (p *Parser) removeTypedefsDuplicates() {
+func (p *Parser) removeTypedefsDuplicates(overlay *Overlay) {
 	// Create a type replacing map
 	typeRemap := make(map[c.Type]c.Type)
-	for _, typedefs := range p.CurOverlay.Types {
-		for i := 0; i < len(typedefs); i++ {
-			t1 := typedefs[i]
-			if _, ok := typeRemap[t1]; ok {
+
+	for i := 0; i < len(overlay.Typedefs); i++ {
+		t1 := overlay.Typedefs[i]
+		if _, ok := typeRemap[t1]; ok {
+			continue
+		}
+		var k = 0
+		if overlay == p.CurOverlay {
+			k = i + 1
+		}
+		for ; k < len(p.CurOverlay.Typedefs); k++ {
+			t2 := p.CurOverlay.Typedefs[k]
+			if _, ok := typeRemap[t2]; ok {
 				continue
 			}
-			for k := i + 1; k < len(typedefs); k++ {
-				t2 := typedefs[k]
-				if _, ok := typeRemap[t2]; ok {
-					continue
-				}
-				if !compareTypedef(t2, t1) {
-					continue
-				}
-				typeRemap[t2] = t1
+			if !compareTypedef(t2, t1) {
+				continue
 			}
+			typeRemap[t2] = t1
 		}
 	}
 	// Replace the pointers in uses of types within other types and declarations
@@ -357,9 +379,6 @@ func (p *Parser) replaceUsedTypesInStructs(typeRemap map[c.Type]c.Type) {
 		t := p.CurOverlay.Structs[i]
 		for k := 0; k < len(t.Fields); k++ {
 			replaceUsedTypesInVar(&t.Fields[k].Var, typeRemap)
-		}
-		for k := 0; k < len(t.Methods); k++ {
-			replaceUsedTypesInVar(&t.Methods[k].Var, typeRemap)
 		}
 		for k := 0; k < len(t.Typedef); k++ {
 			replaceUsedTypesInVar(&t.Typedef[k].Var, typeRemap)
@@ -468,6 +487,22 @@ func (p *Parser) makeFuncNamesUnique() {
 
 // makeStructsUnique goes through parsed symbols and renames duplicate ones.
 func (p *Parser) makeStructsUnique() {
+	for i := 0; i < len(p.CurOverlay.Structs); i++ {
+		t1 := p.CurOverlay.Structs[i]
+		for j := i + 1; j < len(p.CurOverlay.Structs); j++ {
+			t2 := p.CurOverlay.Structs[j]
+			if !strings.HasSuffix(t1.Tag, "fake") || !strings.HasSuffix(t2.Tag, "fake") {
+				continue
+			}
+			if len(t1.Typedef) != 1 || len(t2.Typedef) != 1 {
+				continue
+			}
+			if t1.Typedef[0].Name == t2.Typedef[0].Name {
+				t2.Typedef[0].Name += t2.Tag
+				log.Printf("Rename struct %s to %s\n", t1.Typedef[0].Name, t2.Typedef[0].Name)
+			}
+		}
+	}
 	for _, structs := range p.CurOverlay.StructTags {
 		real_len := len(structs)
 		if real_len < 2 {
@@ -482,6 +517,22 @@ func (p *Parser) makeStructsUnique() {
 
 // makeUnionsUnique goes through parsed symbols and renames duplicate ones.
 func (p *Parser) makeUnionsUnique() {
+	for i := 0; i < len(p.CurOverlay.Unions); i++ {
+		t1 := p.CurOverlay.Unions[i]
+		for j := i + 1; j < len(p.CurOverlay.Unions); j++ {
+			t2 := p.CurOverlay.Unions[j]
+			if !strings.HasSuffix(t1.Tag, "fake") || !strings.HasSuffix(t2.Tag, "fake") {
+				continue
+			}
+			if len(t1.Typedef) != 1 || len(t2.Typedef) != 1 {
+				continue
+			}
+			if t1.Typedef[0].Name == t2.Typedef[0].Name {
+				t2.Typedef[0].Name += t2.Tag
+				log.Printf("Rename union %s to %s\n", t1.Typedef[0].Name, t2.Typedef[0].Name)
+			}
+		}
+	}
 	for _, unions := range p.CurOverlay.UnionTags {
 		real_len := len(unions)
 		if real_len < 2 {
@@ -496,6 +547,22 @@ func (p *Parser) makeUnionsUnique() {
 
 // makeEnumsUnique goes through parsed symbols and renames duplicate ones.
 func (p *Parser) makeEnumsUnique() {
+	for i := 0; i < len(p.CurOverlay.Enums); i++ {
+		t1 := p.CurOverlay.Enums[i]
+		for j := i + 1; j < len(p.CurOverlay.Enums); j++ {
+			t2 := p.CurOverlay.Enums[j]
+			if !strings.HasSuffix(t1.Tag, "fake") || !strings.HasSuffix(t2.Tag, "fake") {
+				continue
+			}
+			if len(t1.Typedef) != 1 || len(t2.Typedef) != 1 {
+				continue
+			}
+			if t1.Typedef[0].Name == t2.Typedef[0].Name {
+				t2.Typedef[0].Name += t2.Tag
+				log.Printf("Rename enum %s to %s\n", t1.Typedef[0].Name, t2.Typedef[0].Name)
+			}
+		}
+	}
 	for _, enums := range p.CurOverlay.EnumTags {
 		real_len := len(enums)
 		if real_len < 2 {

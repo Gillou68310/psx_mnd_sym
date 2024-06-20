@@ -77,8 +77,9 @@ func (p *Parser) parseLineNumbers(addr uint32, body *sym.SetSLD2, syms []*sym.Sy
 		case *sym.EndSLD:
 			return n + 1
 		default:
+			panic("")
 			// Symbol type not handled by parseLineNumber, re-parse.
-			return n
+			//return n
 		}
 	}
 	panic("unreachable")
@@ -103,11 +104,12 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 	f, funcType := findFunc(p, body.Name, addr)
 	// Ignore duplicate function (already parsed).
 	if f.LineStart != 0 {
-		for n = 0; n < len(syms); n++ {
+		panic("")
+		/*for n = 0; n < len(syms); n++ {
 			if _, ok := syms[n].Body.(*sym.FuncEnd); ok {
 				return n + 1
 			}
-		}
+		}*/
 	}
 	f.Path = body.Path
 	// Parse function declaration.
@@ -142,6 +144,7 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 			}
 			f.Blocks = append(f.Blocks, block)
 			curBlock = block
+			curBlock.LineStartAddr = s.Hdr.Value
 			curLine.Line += body.Line - 1
 			line := &Line{
 				Addr: s.Hdr.Value,
@@ -152,6 +155,7 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 			depth++
 		case *sym.BlockEnd:
 			curBlock.LineEnd = body.Line
+			curBlock.LineEndAddr = s.Hdr.Value
 			if !blocks.empty() {
 				curBlock = blocks.pop()
 			} else {
@@ -166,18 +170,23 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 			p.CurOverlay.Lines = append(p.CurOverlay.Lines, line)
 			depth--
 		case *sym.Def:
-			t := p.parseType(body.Type, nil, "", body.Size)
-			v := p.parseLocalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
-			if curBlock != nil {
-				addLocal(curBlock, v)
-			} else {
-				addParam(funcType, v)
+			switch body.Class {
+			case sym.ClassSTAT, sym.ClassREG, sym.ClassREGPARM, sym.ClassARG, sym.ClassLABEL, sym.ClassAUTO:
+				t := p.parseType(body.Type, nil, "", body.Size)
+				v := p.parseLocalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
+				if curBlock != nil {
+					addLocal(curBlock, v)
+				} else {
+					addParam(funcType, v)
+				}
+			default:
+				panic("")
 			}
 		case *sym.Def2:
 			switch body.Class {
 			case sym.ClassTPDEF:
 				p.parseTypedef(body.Type, body.Dims, body.Tag, body.Name, body.Size)
-			default:
+			case sym.ClassSTAT, sym.ClassREG, sym.ClassREGPARM, sym.ClassARG, sym.ClassAUTO:
 				t := p.parseType(body.Type, body.Dims, body.Tag, body.Size)
 				v := p.parseLocalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
 				if curBlock != nil {
@@ -185,6 +194,8 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 				} else {
 					addParam(funcType, v)
 				}
+			default:
+				panic("")
 			}
 		default:
 			panic(fmt.Errorf("support for symbol type %T not yet implemented", body))
@@ -193,8 +204,25 @@ func (p *Parser) parseFunc(addr uint32, body *sym.FuncStart, syms []*sym.Symbol)
 	panic("unreachable")
 }
 
+func tagRefStructUnion(t c.Type) {
+	switch tt := t.(type) {
+	case *c.StructType:
+		tt.IsRef = true
+	case *c.UnionType:
+		tt.IsRef = true
+	case *c.PointerType:
+		tagRefStructUnion(tt.Elem)
+	case *c.ArrayType:
+		tagRefStructUnion(tt.Elem)
+	default:
+		break
+	}
+}
+
 // parseLocalDecl parses a local declaration symbol.
 func (p *Parser) parseLocalDecl(addr, size uint32, class sym.Class, t c.Type, name string) *c.VarDecl {
+	tagRefStructUnion(t)
+	validateSize(t, size, 1)
 	name = validName(name)
 	v := &c.VarDecl{
 		Addr:  addr,
@@ -217,6 +245,8 @@ func (p *Parser) parseLocalDecl(addr, size uint32, class sym.Class, t c.Type, na
 
 // parseGlobalDecl parses a global declaration symbol.
 func (p *Parser) parseGlobalDecl(addr, size uint32, class sym.Class, t c.Type, name string) {
+	tagRefStructUnion(t)
+	validateSize(t, size, 1)
 	name = validName(name)
 	if _, ok := t.(*c.FuncType); ok {
 		f := &c.FuncDecl{
@@ -285,7 +315,8 @@ func findFunc(p *Parser, name string, addr uint32) (*c.FuncDecl, *c.FuncType) {
 	if f == nil {
 		f = p.emptyFunc(name, addr)
 		if nameExists {
-			f.Var.Name = UniqueFuncName(p.CurOverlay.FuncNames, f)
+			panic("")
+			//f.Var.Name = UniqueFuncName(p.CurOverlay.FuncNames, f)
 		}
 		log.Printf("unable to locate function %q, created void", name)
 	}
@@ -308,7 +339,7 @@ func parseClass(class sym.Class) c.StorageClass {
 	case sym.ClassREG:
 		return c.Register
 	case sym.ClassLABEL:
-		return 0
+		return c.Label
 	case sym.ClassARG:
 		return 0
 	case sym.ClassTPDEF:

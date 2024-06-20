@@ -58,10 +58,12 @@ func (v *VarDecl) Def() string {
 	if v.Size > 0 && v.Class != Typedef {
 		fmt.Fprintf(buf, "// size: 0x%X\n", v.Size)
 	}
-	if v.Class == 0 || v.Class == Auto || v.Class == Register {
-		fmt.Fprintf(buf, "%s", v.Var)
+	if v.Class == Label {
+		fmt.Fprintf(buf, "%s:", v.Name)
+	} else if v.Class == 0 || v.Class == Auto || v.Class == Register {
+		fmt.Fprintf(buf, "%s;", v.Var)
 	} else {
-		fmt.Fprintf(buf, "%s %s", v.Class, v.Var)
+		fmt.Fprintf(buf, "%s %s;", v.Class, v.Var)
 	}
 	return buf.String()
 }
@@ -78,6 +80,7 @@ const (
 	Static                           // static
 	Register                         // register
 	Typedef                          // typedef
+	Label                            // label
 )
 
 // A FuncDecl is a function declaration.
@@ -124,18 +127,22 @@ func (f *FuncDecl) Def() string {
 	fmt.Fprintf(buf, "%s\n", f.Var)
 	for i, block := range f.Blocks {
 		indent := strings.Repeat("\t", block.Depth)
-		fmt.Fprintf(buf, "%s{ //line: %d\n", indent, block.LineStart)
+		fmt.Fprintf(buf, "%s// line: %d\n", indent, block.LineStart)
+		fmt.Fprintf(buf, "%s// address: 0x%08X\n", indent, block.LineStartAddr)
+		fmt.Fprintf(buf, "%s{\n", indent)
 		for _, local := range block.Locals {
 			indent := strings.Repeat("\t", block.Depth+1)
 			l := strings.Replace(local.Def(), "\n", "\n"+indent, -1)
-			fmt.Fprintf(buf, "%s%s;\n", indent, l)
+			fmt.Fprintf(buf, "%s%s\n", indent, l)
 		}
 		if i < len(f.Blocks)-1 {
 			for j := i; j >= 0; j-- {
 				if f.Blocks[i+1].Depth <= f.Blocks[j].Depth && !f.Blocks[j].Closed {
 					f.Blocks[j].Closed = true
 					indent := strings.Repeat("\t", f.Blocks[j].Depth)
-					fmt.Fprintf(buf, "%s} //line: %d\n", indent, f.Blocks[j].LineEnd)
+					fmt.Fprintf(buf, "%s// line: %d\n", indent, f.Blocks[j].LineEnd)
+					fmt.Fprintf(buf, "%s// address: 0x%08X\n", indent, f.Blocks[j].LineEndAddr)
+					fmt.Fprintf(buf, "%s}\n", indent)
 				}
 			}
 		}
@@ -144,7 +151,9 @@ func (f *FuncDecl) Def() string {
 		if !f.Blocks[i].Closed {
 			f.Blocks[i].Closed = true
 			indent := strings.Repeat("\t", f.Blocks[i].Depth)
-			fmt.Fprintf(buf, "%s} //line: %d\n", indent, f.Blocks[i].LineEnd)
+			fmt.Fprintf(buf, "%s// line: %d\n", indent, f.Blocks[i].LineEnd)
+			fmt.Fprintf(buf, "%s// address: 0x%08X\n", indent, f.Blocks[i].LineEndAddr)
+			fmt.Fprintf(buf, "%s}\n", indent)
 		}
 	}
 	return buf.String()
@@ -157,7 +166,9 @@ type Block struct {
 	// End line number (relative to the function).
 	LineEnd uint32
 	// Local variables.
-	Locals []*VarDecl
-	Closed bool
-	Depth  int
+	Locals        []*VarDecl
+	Closed        bool
+	Depth         int
+	LineStartAddr uint32
+	LineEndAddr   uint32
 }

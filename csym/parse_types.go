@@ -50,8 +50,13 @@ func (p *Parser) ParseTypesDecls(syms []*sym.Symbol) {
 			case sym.ClassEXT, sym.ClassSTAT:
 				t := p.parseType(body.Type, nil, "", body.Size)
 				p.parseGlobalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
-			case sym.ClassMOS, sym.ClassMOU, sym.ClassMOE, sym.ClassFIELD, sym.Class103:
+			case sym.ClassMOS, sym.ClassMOU, sym.ClassMOE, sym.ClassFIELD:
 				// nothing to do.
+				panic("")
+			case sym.Class103:
+				if p.opts.Verbose {
+					fmt.Printf("%s\n", body.Name)
+				}
 			default:
 				panic(fmt.Sprintf("support for symbol class %q not yet implemented", body.Class))
 			}
@@ -68,6 +73,7 @@ func (p *Parser) ParseTypesDecls(syms []*sym.Symbol) {
 				}
 				p.parseGlobalDecl(s.Hdr.Value, body.Size, body.Class, t, body.Name)
 			case sym.ClassMOS, sym.ClassMOU, sym.ClassMOE, sym.ClassFIELD, sym.ClassEOS:
+				panic("")
 				// nothing to do.
 			default:
 				panic(fmt.Sprintf("support for symbol class %q not yet implemented", body.Class))
@@ -110,9 +116,21 @@ func (p *Parser) initTaggedTypes() {
 		},
 	}
 	p.CurOverlay.Types["bool"] = append(p.CurOverlay.Types["bool"], boolDef)
-	// Add scaffolding types for structs, unions and enums, so they may be
-	// referrenced before defined.
-	//p.emptyStruct("__vtbl_ptr_type", 0)
+}
+
+func validateSize(t c.Type, size uint32, elmt uint32) {
+	switch tt := t.(type) {
+	case *c.StructType:
+		if size != tt.Size*elmt {
+			panic("")
+		}
+	case *c.UnionType:
+		if size != tt.Size*elmt {
+			panic("")
+		}
+	case *c.ArrayType:
+		validateSize(tt.Elem, size, elmt*uint32(tt.Len))
+	}
 }
 
 // parseStructTag parses a struct tag sequence of symbols.
@@ -137,17 +155,18 @@ func (p *Parser) parseStructTag(body *sym.Def, syms []*sym.Symbol) (n int) {
 					},
 				}
 				t.Fields = append(t.Fields, field)
+				validateSize(field.Type, field.Size, 1)
 			case sym.ClassFIELD:
-				// TODO: Figure out what FIELD represents. Use method for now.
-				method := c.Field{
-					Offset: s.Hdr.Value,
-					Size:   body.Size,
+				field := c.Field{
+					Offset:   s.Hdr.Value,
+					Size:     body.Size,
+					Bitfield: true,
 					Var: c.Var{
 						Type: p.parseType(body.Type, nil, "", body.Size),
 						Name: validName(body.Name),
 					},
 				}
-				t.Methods = append(t.Methods, method)
+				t.Fields = append(t.Fields, field)
 			default:
 				panic(fmt.Errorf("support for class %q not yet implemented", body.Class))
 			}
@@ -167,11 +186,14 @@ func (p *Parser) parseStructTag(body *sym.Def, syms []*sym.Symbol) (n int) {
 					field.Size = 4
 				}
 				t.Fields = append(t.Fields, field)
+				validateSize(field.Type, field.Size, 1)
 			case sym.ClassEOS:
 				return n + 1
 			default:
 				panic(fmt.Errorf("support for class %q not yet implemented", body.Class))
 			}
+		default:
+			panic("")
 		}
 	}
 	panic("unreachable")
@@ -199,6 +221,7 @@ func (p *Parser) parseUnionTag(body *sym.Def, syms []*sym.Symbol) (n int) {
 					},
 				}
 				t.Fields = append(t.Fields, field)
+				validateSize(field.Type, field.Size, 1)
 			default:
 				panic(fmt.Errorf("support for class %q not yet implemented", body.Class))
 			}
@@ -218,11 +241,14 @@ func (p *Parser) parseUnionTag(body *sym.Def, syms []*sym.Symbol) (n int) {
 					field.Size = 4
 				}
 				t.Fields = append(t.Fields, field)
+				validateSize(field.Type, field.Size, 1)
 			case sym.ClassEOS:
 				return n + 1
 			default:
 				panic(fmt.Errorf("support for class %q not yet implemented", body.Class))
 			}
+		default:
+			panic("")
 		}
 	}
 	panic("unreachable")
@@ -257,6 +283,8 @@ func (p *Parser) parseEnumTag(body *sym.Def, syms []*sym.Symbol) (n int) {
 			default:
 				panic(fmt.Errorf("support for class %q not yet implemented", body.Class))
 			}
+		default:
+			panic("")
 		}
 	}
 	panic("unreachable")

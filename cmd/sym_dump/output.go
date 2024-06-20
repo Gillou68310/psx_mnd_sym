@@ -40,7 +40,7 @@ func dumpUnion(u *c.UnionType, f *os.File, force bool) error {
 			break
 		}
 	}
-	if force || !c.IsFakeTag(u.Tag) || len(u.Typedef) != 0 {
+	if force || !c.IsFakeTag(u.Tag) || len(u.Typedef) != 0 || u.IsRef {
 		u.Emitted = true
 		if _, err := fmt.Fprintf(f, "%s;\n\n", u.Def()); err != nil {
 			return errors.WithStack(err)
@@ -70,7 +70,7 @@ func dumpStruct(s *c.StructType, f *os.File, force bool) error {
 			break
 		}
 	}
-	if force || !c.IsFakeTag(s.Tag) || len(s.Typedef) != 0 {
+	if force || !c.IsFakeTag(s.Tag) || len(s.Typedef) != 0 || s.IsRef {
 		s.Emitted = true
 		if _, err := fmt.Fprintf(f, "%s\n\n", s.Def()); err != nil {
 			return errors.WithStack(err)
@@ -84,7 +84,6 @@ func dumpStruct(s *c.StructType, f *os.File, force bool) error {
 func dumpTypes(p *csym.Parser, outputDir string) error {
 	// Create output file.
 	typesPath := filepath.Join(outputDir, typesName)
-	fmt.Println("creating:", typesPath)
 	f, err := os.Create(typesPath)
 	if err != nil {
 		return errors.WithStack(err)
@@ -92,7 +91,7 @@ func dumpTypes(p *csym.Parser, outputDir string) error {
 	defer f.Close()
 	// Print predeclared identifiers.
 	if def, ok := p.Overlay.Types["bool"]; ok {
-		if _, err := fmt.Fprintf(f, "%s;\n", def[0].Def()); err != nil {
+		if _, err := fmt.Fprintf(f, "%s\n", def[0].Def()); err != nil {
 			return errors.WithStack(err)
 		}
 	}
@@ -127,7 +126,7 @@ func dumpTypes(p *csym.Parser, outputDir string) error {
 	// Print typedefs.
 	for _, def := range p.Overlay.Typedefs {
 		if !def.Emitted {
-			if _, err := fmt.Fprintf(f, "%s;\n\n", def.Def()); err != nil {
+			if _, err := fmt.Fprintf(f, "%s\n\n", def.Def()); err != nil {
 				return errors.WithStack(err)
 			}
 		}
@@ -137,28 +136,15 @@ func dumpTypes(p *csym.Parser, outputDir string) error {
 		// Create output file.
 		typeName := fmt.Sprintf("types_%x.h", overlay.ID)
 		typesPath := filepath.Join(outputDir, typeName)
-		fmt.Println("creating:", typesPath)
 		f, err := os.Create(typesPath)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create declarations header %q", typesPath)
 		}
 		defer f.Close()
-		// Print predeclared identifiers.
-		if def, ok := overlay.Types["bool"]; ok {
-			if _, err := fmt.Fprintf(f, "%s;\n", def[0].Def()); err != nil {
-				return errors.WithStack(err)
-			}
-		}
-		fmt.Fprintf(f, "typedef signed char s8;\n")
-		fmt.Fprintf(f, "typedef unsigned char u8;\n")
-		fmt.Fprintf(f, "typedef short s16;\n")
-		fmt.Fprintf(f, "typedef unsigned short u16;\n")
-		fmt.Fprintf(f, "typedef long s32;\n")
-		fmt.Fprintf(f, "typedef unsigned long u32;\n")
-		fmt.Fprintf(f, "typedef float f32;\n\n")
 
-		// Print enums.
 		fmt.Fprintf(f, "// Overlay %d\n", overlay.ID)
+		fmt.Fprintf(f, "#include \"type.h\"\n\n")
+		// Print enums.
 		for _, t := range overlay.Enums {
 			if _, err := fmt.Fprintf(f, "%s;\n\n", t.Def()); err != nil {
 				return errors.WithStack(err)
@@ -181,7 +167,7 @@ func dumpTypes(p *csym.Parser, outputDir string) error {
 		// Print typedefs.
 		for _, def := range overlay.Typedefs {
 			if !def.Emitted {
-				if _, err := fmt.Fprintf(f, "%s;\n\n", def.Def()); err != nil {
+				if _, err := fmt.Fprintf(f, "%s\n\n", def.Def()); err != nil {
 					return errors.WithStack(err)
 				}
 			}
@@ -205,27 +191,26 @@ const (
 func dumpDecls(p *csym.Parser, outputDir string) error {
 	// Create output file.
 	declsPath := filepath.Join(outputDir, declsName)
-	fmt.Println("creating:", declsPath)
 	f, err := os.Create(declsPath)
 	if err != nil {
 		return errors.Wrapf(err, "unable to create declarations header %q", declsPath)
 	}
 	defer f.Close()
 	// Store declarations of default binary.
-	if err := dumpOverlay(f, p.Overlay); err != nil {
+	if err := dumpOverlay(f, p.Overlay, typesName); err != nil {
 		return errors.WithStack(err)
 	}
 	// Store declarations of overlays.
 	for _, overlay := range p.Overlays {
 		overlayName := fmt.Sprintf(overlayNameFormat, overlay.ID)
 		overlayPath := filepath.Join(outputDir, overlayName)
-		fmt.Println("creating:", overlayPath)
 		f, err := os.Create(overlayPath)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create overlay header %q", overlayPath)
 		}
 		defer f.Close()
-		if err := dumpOverlay(f, overlay); err != nil {
+		typename := fmt.Sprintf("type_%x.h", overlay.ID)
+		if err := dumpOverlay(f, overlay, typename); err != nil {
 			return errors.WithStack(err)
 		}
 	}
@@ -236,7 +221,6 @@ func dumpSymbols(p *csym.Parser, outputDir string) error {
 	// Create output file.
 	symbolName := fmt.Sprintf(symbolNameFormat, p.Overlay.ID)
 	symbolPath := filepath.Join(outputDir, symbolName)
-	fmt.Println("creating:", symbolPath)
 	f, err := os.Create(symbolPath)
 	if err != nil {
 		return errors.Wrapf(err, "unable to create symbol file %q", symbolPath)
@@ -250,7 +234,6 @@ func dumpSymbols(p *csym.Parser, outputDir string) error {
 	for _, overlay := range p.Overlays {
 		symbolName := fmt.Sprintf(symbolNameFormat, overlay.ID)
 		symbolPath := filepath.Join(outputDir, symbolName)
-		fmt.Println("creating:", symbolPath)
 		f, err := os.Create(symbolPath)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create symbol file %q", symbolPath)
@@ -326,9 +309,9 @@ func dumpOverlaySymbols(w io.Writer, overlay *csym.Overlay) error {
 }
 
 // dumpOverlay outputs the declarations of the overlay, writing to w.
-func dumpOverlay(w io.Writer, overlay *csym.Overlay) error {
+func dumpOverlay(w io.Writer, overlay *csym.Overlay, typename string) error {
 	// Add types.h include directory.
-	if _, err := fmt.Fprintf(w, "#include %q\n\n", typesName); err != nil {
+	if _, err := fmt.Fprintf(w, "#include %s\n\n", typename); err != nil {
 		return errors.WithStack(err)
 	}
 	if overlay.Addr != 0 || overlay.ID != 0 || overlay.Length != 0 {
@@ -341,7 +324,7 @@ func dumpOverlay(w io.Writer, overlay *csym.Overlay) error {
 		return overlay.Vars[i].Addr < overlay.Vars[j].Addr
 	})
 	for _, v := range overlay.Vars {
-		if _, err := fmt.Fprintf(w, "%s;\n\n", v.Def()); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\n\n", v.Def()); err != nil {
 			return errors.WithStack(err)
 		}
 	}
@@ -385,7 +368,6 @@ func dumpSourceFiles(p *csym.Parser, outputDir string) error {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return errors.WithStack(err)
 		}
-		fmt.Println("creating:", path)
 		f, err := os.Create(path)
 		if err != nil {
 			return errors.WithStack(err)
@@ -476,7 +458,6 @@ func dumpIDAOverlay(overlay *csym.Overlay, outputDir string) error {
 		}
 	}
 	identsPath := filepath.Join(dir, idaIdentsName)
-	fmt.Println("creating:", identsPath)
 	w, err := os.Create(identsPath)
 	if err != nil {
 		return errors.Wrapf(err, "unable to create declarations IDA script %q", identsPath)
@@ -494,7 +475,6 @@ func dumpIDAOverlay(overlay *csym.Overlay, outputDir string) error {
 	}
 	// Create scripts for adding function signatures to identifiers.
 	funcsPath := filepath.Join(dir, idaFuncsName)
-	fmt.Println("creating:", funcsPath)
 	w, err = os.Create(funcsPath)
 	if err != nil {
 		return errors.Wrapf(err, "unable to create function signatures IDA script %q", funcsPath)
@@ -510,7 +490,6 @@ func dumpIDAOverlay(overlay *csym.Overlay, outputDir string) error {
 	}
 	// Create scripts adding global variable types to identifiers.
 	varsPath := filepath.Join(dir, idaVarsName)
-	fmt.Println("creating:", varsPath)
 	w, err = os.Create(varsPath)
 	if err != nil {
 		return errors.Wrapf(err, "unable to create global variables IDA script %q", varsPath)

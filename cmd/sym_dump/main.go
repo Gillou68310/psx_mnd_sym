@@ -68,12 +68,20 @@ func main() {
 
 			// Default overlay
 			p.CurOverlay = p.Overlay
-			p.RemoveDuplicateTypes()
+			p.RemoveDuplicateTypes(p.Overlay)
+			// Other overlays
+			for _, overlay := range p.Overlays {
+				p.CurOverlay = overlay
+				p.RemoveDuplicateTypes(overlay)
+				p.RemoveDuplicateTypes(p.Overlay)
+			}
+
+			// Default overlay
+			p.CurOverlay = p.Overlay
 			p.MakeNamesUnique()
 			// Other overlays
 			for _, overlay := range p.Overlays {
 				p.CurOverlay = overlay
-				p.RemoveDuplicateTypes()
 				p.MakeNamesUnique()
 			}
 

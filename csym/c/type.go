@@ -50,11 +50,10 @@ type StructType struct {
 	// Structure tag.
 	Tag string
 	// Structure fields.
-	Fields []Field
-	// Struct methods.
-	Methods []Field
+	Fields  []Field
 	Emitted bool
 	Typedef []*VarDecl
+	IsRef   bool
 }
 
 // String returns the string representation of the structure type.
@@ -87,22 +86,18 @@ func (t *StructType) Def() string {
 		buf.WriteString("struct {\n")
 	}
 	for _, field := range t.Fields {
-		if field.Size > 0 {
+		if field.Bitfield {
+			if field.Offset%8 == 0 {
+				fmt.Fprintf(buf, "\t// offset: 0x%04X\n", int(field.Offset/8))
+			}
+			fmt.Fprintf(buf, "\t%s %s:%d;\n", field.Type, field.Name, field.Size)
+		} else if field.Size > 0 {
 			fmt.Fprintf(buf, "\t// offset: 0x%04X (%d bytes)\n", field.Offset, field.Size)
-		} else if len(t.Fields) > 1 && t.Fields[1].Offset > 0 {
-			fmt.Fprintf(buf, "\t// offset: 0x%04X\n", field.Offset)
-		}
-		fmt.Fprintf(buf, "\t%s;\n", field)
-	}
-	// TODO: Figure out how to print methods in a good way; for now, commented
-	// out.
-	for _, method := range t.Methods {
-		if method.Size > 0 {
-			fmt.Fprintf(buf, "\t// offset: 0x%04X (%d bytes)\n", method.Offset, method.Size)
+			fmt.Fprintf(buf, "\t%s;\n", field)
 		} else {
-			fmt.Fprintf(buf, "\t// offset: 0x%04X\n", method.Offset)
+			fmt.Fprintf(buf, "\t// offset: 0x%04X\n", field.Offset)
+			fmt.Fprintf(buf, "\t%s;\n", field)
 		}
-		fmt.Fprintf(buf, "\t// %s;\n", method)
 	}
 	if len(t.Typedef) == 1 {
 		switch t.Typedef[0].Type.(type) {
@@ -135,6 +130,7 @@ type UnionType struct {
 	Fields  []Field
 	Typedef []*VarDecl
 	Emitted bool
+	IsRef   bool
 }
 
 // String returns the string representation of the union type.
@@ -329,6 +325,7 @@ type Field struct {
 	Size uint32
 	// Underlying variable.
 	Var
+	Bitfield bool
 }
 
 // A Var represents a variable declaration or function parameter.
@@ -383,13 +380,13 @@ func (v Var) String() string {
 		v.Type = t.RetType
 		return v.String()
 	case *StructType:
-		if IsFakeTag(t.Tag) && len(t.Typedef) == 0 && !t.Emitted {
-			return fmt.Sprintf("%s %s", fakeStructString(t), v.Name)
+		if IsFakeTag(t.Tag) && len(t.Typedef) == 0 && !t.IsRef {
+			return fmt.Sprintf("%s %s", fakeStructString(t, 0), v.Name)
 		}
 		return fmt.Sprintf("%s %s", t, v.Name)
 	case *UnionType:
-		if IsFakeTag(t.Tag) && len(t.Typedef) == 0 && !t.Emitted {
-			return fmt.Sprintf("%s %s", fakeUnionString(t), v.Name)
+		if IsFakeTag(t.Tag) && len(t.Typedef) == 0 && !t.IsRef {
+			return fmt.Sprintf("%s %s", fakeUnionString(t, 0), v.Name)
 		}
 		return fmt.Sprintf("%s %s", t, v.Name)
 	default:
@@ -397,42 +394,154 @@ func (v Var) String() string {
 	}
 }
 
+func indent(buf *strings.Builder, r int) {
+	for i := 0; i < r; i++ {
+		buf.WriteString("\t")
+	}
+}
+
 // fakeUnionString returns the string representation of the given union with a
 // fake name.
-func fakeUnionString(t *UnionType) string {
+func fakeUnionString(t *UnionType, r int) string {
 	buf := &strings.Builder{}
-	if t.Size > 0 {
+	/*if t.Size > 0 {
+		indent(buf, r)
 		fmt.Fprintf(buf, "// size: 0x%X\n", t.Size)
-	}
-	buf.WriteString("\tunion {\n")
+	}*/
+	indent(buf, r)
+	buf.WriteString("union {\n")
 	for _, field := range t.Fields {
 		if field.Size > 0 {
+			indent(buf, r)
 			fmt.Fprintf(buf, "\t\t// offset: 0x%04X (%d bytes)\n", field.Offset, field.Size)
-		} else if len(t.Fields) > 1 && t.Fields[1].Offset > 0 {
+		} else {
+			indent(buf, r)
 			fmt.Fprintf(buf, "\t\t// offset: 0x%04X\n", field.Offset)
 		}
-		fmt.Fprintf(buf, "\t\t%s;\n", field)
+		switch t := field.Type.(type) {
+		case *StructType:
+			if IsFakeTag(t.Tag) && len(t.Typedef) == 0 {
+				fmt.Fprintf(buf, "\t%s %s;\n", fakeStructString(t, r+1), field.Name)
+			} else {
+				indent(buf, r)
+				fmt.Fprintf(buf, "\t\t%s;\n", field)
+			}
+		case *UnionType:
+			if IsFakeTag(t.Tag) && len(t.Typedef) == 0 {
+				fmt.Fprintf(buf, "\t%s %s;\n", fakeUnionString(t, r+1), field.Name)
+			} else {
+				indent(buf, r)
+				fmt.Fprintf(buf, "\t\t%s;\n", field)
+			}
+		case *ArrayType:
+			switch tt := t.Elem.(type) {
+			case *StructType:
+				if IsFakeTag(tt.Tag) && len(tt.Typedef) == 0 {
+					fmt.Fprintf(buf, "\t%s", fakeStructString(tt, r+1))
+					if t.Len > 0 {
+						fmt.Fprintf(buf, "%s[%d];\n", field.Name, t.Len)
+					} else {
+						fmt.Fprintf(buf, "%s[];\n", field.Name)
+					}
+				} else {
+					indent(buf, r)
+					fmt.Fprintf(buf, "\t\t%s;\n", field)
+				}
+			case *UnionType:
+				if IsFakeTag(tt.Tag) && len(tt.Typedef) == 0 {
+					fmt.Fprintf(buf, "\t%s", fakeUnionString(tt, r+1))
+					if t.Len > 0 {
+						fmt.Fprintf(buf, "%s[%d];\n", field.Name, t.Len)
+					} else {
+						fmt.Fprintf(buf, "%s[];\n", field.Name)
+					}
+				} else {
+					indent(buf, r)
+					fmt.Fprintf(buf, "\t\t%s;\n", field)
+				}
+			default:
+				indent(buf, r)
+				fmt.Fprintf(buf, "\t\t%s;\n", field)
+			}
+		default:
+			indent(buf, r)
+			fmt.Fprintf(buf, "\t\t%s;\n", field)
+		}
 	}
 	t.Emitted = true
+	indent(buf, r)
 	buf.WriteString("\t}")
 	return buf.String()
 }
 
-func fakeStructString(t *StructType) string {
+func fakeStructString(t *StructType, r int) string {
 	buf := &strings.Builder{}
-	if t.Size > 0 {
+	/*if t.Size > 0 {
+		indent(buf, r)
 		fmt.Fprintf(buf, "// size: 0x%X\n", t.Size)
-	}
-	buf.WriteString("\tstruct {\n")
+	}*/
+	indent(buf, r)
+	buf.WriteString("struct {\n")
 	for _, field := range t.Fields {
 		if field.Size > 0 {
+			indent(buf, r)
 			fmt.Fprintf(buf, "\t\t// offset: 0x%04X (%d bytes)\n", field.Offset, field.Size)
-		} else if len(t.Fields) > 1 && t.Fields[1].Offset > 0 {
+		} else {
+			indent(buf, r)
 			fmt.Fprintf(buf, "\t\t// offset: 0x%04X\n", field.Offset)
 		}
-		fmt.Fprintf(buf, "\t\t%s;\n", field)
+		switch t := field.Type.(type) {
+		case *StructType:
+			if IsFakeTag(t.Tag) && len(t.Typedef) == 0 {
+				fmt.Fprintf(buf, "\t%s %s;\n", fakeStructString(t, r+1), field.Name)
+			} else {
+				indent(buf, r)
+				fmt.Fprintf(buf, "\t\t%s;\n", field)
+			}
+		case *UnionType:
+			if IsFakeTag(t.Tag) && len(t.Typedef) == 0 {
+				fmt.Fprintf(buf, "\t%s %s;\n", fakeUnionString(t, r+1), field.Name)
+			} else {
+				indent(buf, r)
+				fmt.Fprintf(buf, "\t\t%s;\n", field)
+			}
+		case *ArrayType:
+			switch tt := t.Elem.(type) {
+			case *StructType:
+				if IsFakeTag(tt.Tag) && len(tt.Typedef) == 0 {
+					fmt.Fprintf(buf, "\t%s", fakeStructString(tt, r+1))
+					if t.Len > 0 {
+						fmt.Fprintf(buf, "%s[%d];\n", field.Name, t.Len)
+					} else {
+						fmt.Fprintf(buf, "%s[];\n", field.Name)
+					}
+				} else {
+					indent(buf, r)
+					fmt.Fprintf(buf, "\t\t%s;\n", field)
+				}
+			case *UnionType:
+				if IsFakeTag(tt.Tag) && len(tt.Typedef) == 0 {
+					fmt.Fprintf(buf, "\t%s", fakeUnionString(tt, r+1))
+					if t.Len > 0 {
+						fmt.Fprintf(buf, "%s[%d];\n", field.Name, t.Len)
+					} else {
+						fmt.Fprintf(buf, "%s[];\n", field.Name)
+					}
+				} else {
+					indent(buf, r)
+					fmt.Fprintf(buf, "\t\t%s;\n", field)
+				}
+			default:
+				indent(buf, r)
+				fmt.Fprintf(buf, "\t\t%s;\n", field)
+			}
+		default:
+			indent(buf, r)
+			fmt.Fprintf(buf, "\t\t%s;\n", field)
+		}
 	}
 	t.Emitted = true
+	indent(buf, r)
 	buf.WriteString("\t}")
 	return buf.String()
 }
